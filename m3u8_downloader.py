@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
 class M3U8Downloader:
-    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2):
+    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False):
         self.m3u8_url = m3u8_url
         self.max_workers = max_workers
         self.max_retries = max_retries  # 最大重试次数
@@ -30,6 +30,8 @@ class M3U8Downloader:
         self.key_url = None
         self.key = None
         self.iv = None
+        # 测试模式：用于模拟部分片段下载失败
+        self.test_mode = test_mode
 
     def _create_temp_dir(self):
         # 计算URL的哈希值作为目录名
@@ -119,6 +121,12 @@ class M3U8Downloader:
         retries = 0
         success = False
         last_error = None
+        
+        # 测试模式：模拟部分片段下载失败（每5个片段中让第3个和第5个失败）
+        if self.test_mode and (index % 5 == 2 or index % 5 == 4):
+            self.fail_count += 1
+            print(f"\n测试模式: 模拟片段 {index} 下载失败")
+            return
         
         # 确保URL是完整的
         if not segment_url.startswith('http'):
@@ -301,6 +309,7 @@ def main():
     # 解析命令行参数
     m3u8_url = None
     keep_segments = False
+    abort_on_error = False
     
     # 检查是否有--keep-segments或-k参数
     if '--keep-segments' in sys.argv:
@@ -309,6 +318,14 @@ def main():
     elif '-k' in sys.argv:
         keep_segments = True
         sys.argv.remove('-k')
+    
+    # 检查是否有--abort-on-error或-a参数
+    if '--abort-on-error' in sys.argv:
+        abort_on_error = True
+        sys.argv.remove('--abort-on-error')
+    elif '-a' in sys.argv:
+        abort_on_error = True
+        sys.argv.remove('-a')
     
     # 获取m3u8网址（优先从命令行参数获取）
     if len(sys.argv) > 1:
@@ -322,14 +339,26 @@ def main():
         print("网址不能为空")
         return
     
-    # 显示当前的清理设置
+    # 显示当前的设置
     if keep_segments:
         print("注意：将保留原始视频切片文件")
     else:
         print("注意：将自动清理临时视频切片文件")
     
+    if abort_on_error:
+        print("注意：当有片段下载失败时将终止程序，不进行合并")
+    else:
+        print("注意：当有片段下载失败时将自动排除失败片段，继续合并")
+    
+    # 检查是否有--test-mode参数（用于测试）
+    test_mode = False
+    if '--test-mode' in sys.argv:
+        test_mode = True
+        sys.argv.remove('--test-mode')
+        print("注意：已启用测试模式，将模拟部分片段下载失败")
+    
     # 创建下载器实例
-    downloader = M3U8Downloader(m3u8_url)
+    downloader = M3U8Downloader(m3u8_url, test_mode=test_mode)
     
     try:
         # 下载m3u8文件并解析
@@ -337,11 +366,20 @@ def main():
             return
         
         # 下载所有ts片段
-        if not downloader.download_all_segments():
-            # 如果有片段下载失败，可以选择继续合并或退出
-            choice = input("有片段下载失败，是否继续合并？(y/n): ").lower()
-            if choice != 'y':
+        all_segments_successful = downloader.download_all_segments()
+        
+        # 如果有片段下载失败
+        if not all_segments_successful:
+            if abort_on_error:
+                print("错误：有片段下载失败，已按照--abort-on-error参数设置终止程序")
                 return
+            else:
+                # 自动排除失败的片段，继续合并
+                print(f"警告：有 {downloader.fail_count} 个片段下载失败，将只使用成功下载的片段进行合并")
+                # 检查是否还有成功下载的片段
+                if downloader.success_count == 0:
+                    print("错误：没有成功下载的片段，无法进行合并")
+                    return
         
         # 合并ts片段为视频文件
         if downloader.merge_segments():
