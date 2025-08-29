@@ -12,14 +12,17 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
 class M3U8Downloader:
-    def __init__(self, m3u8_url, max_workers=10):
+    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2):
         self.m3u8_url = m3u8_url
         self.max_workers = max_workers
+        self.max_retries = max_retries  # 最大重试次数
+        self.retry_delay = retry_delay  # 重试间隔（秒）
         self.temp_dir = self._create_temp_dir()
         self.segments = []
         self.total_size = 0
         self.success_count = 0
         self.fail_count = 0
+        self.retry_count = 0  # 重试次数统计
         self.start_time = None
         self.base_url = self._get_base_url()
         # 解密相关属性
@@ -113,75 +116,94 @@ class M3U8Downloader:
             return False
 
     def _download_segment(self, segment_url, index):
-        try:
-            # 确保URL是完整的
-            if not segment_url.startswith('http'):
-                if segment_url.startswith('/'):
-                    parsed_url = urlparse(self.m3u8_url)
-                    segment_url = f"{parsed_url.scheme}://{parsed_url.netloc}{segment_url}"
-                else:
-                    segment_url = f"{self.base_url}{segment_url}"
-            
-            # 添加浏览器请求头
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'zh-CN,zh;q=0.9',
-                'Referer': self.base_url,
-            }
-            
-            # 下载ts片段
-            response = requests.get(segment_url, headers=headers, stream=True, timeout=60)
-            response.raise_for_status()
-            
-            # 保存文件
-            file_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
-            
-            # 检查是否需要解密
-            if self.is_encrypted and self.key:
-                # 读取加密数据
-                encrypted_data = response.content
-                
-                # 设置IV（如果未指定，使用片段序号）
-                if self.iv is None:
-                    # 通常IV是16字节的，这里使用index的16字节表示
-                    iv = index.to_bytes(16, byteorder='big')
-                else:
-                    iv = self.iv
-                
-                # 创建解密器
-                cipher = Cipher(algorithms.AES(self.key), modes.CBC(iv), backend=default_backend())
-                decryptor = cipher.decryptor()
-                
-                # 解密数据
-                decrypted_data = decryptor.update(encrypted_data) + decryptor.finalize()
-                
-                # 保存解密后的数据
-                with open(file_path, 'wb') as f:
-                    f.write(decrypted_data)
-                
-                self.total_size += len(decrypted_data)
+        retries = 0
+        success = False
+        last_error = None
+        
+        # 确保URL是完整的
+        if not segment_url.startswith('http'):
+            if segment_url.startswith('/'):
+                parsed_url = urlparse(self.m3u8_url)
+                segment_url = f"{parsed_url.scheme}://{parsed_url.netloc}{segment_url}"
             else:
-                # 直接保存未加密的数据
-                with open(file_path, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                            self.total_size += len(chunk)
-            
-            self.success_count += 1
-            
-            # 显示下载进度
-            elapsed_time = time.time() - self.start_time
-            speed = self.total_size / elapsed_time if elapsed_time > 0 else 0
-            progress = (self.success_count + self.fail_count) / len(self.segments) * 100
-            
-            sys.stdout.write(f"\r下载进度: {progress:.2f}% | 成功: {self.success_count} | 失败: {self.fail_count} | 速度: {speed/1024/1024:.2f} MB/s")
-            sys.stdout.flush()
-            
-        except Exception as e:
+                segment_url = f"{self.base_url}{segment_url}"
+        
+        # 添加浏览器请求头
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Referer': self.base_url,
+        }
+        
+        # 下载和重试逻辑
+        while retries <= self.max_retries and not success:
+            try:
+                # 如果是重试，打印重试信息
+                if retries > 0:
+                    self.retry_count += 1
+                    print(f"\n重试下载片段 {index} (第{retries}次/{self.max_retries}次)")
+                    # 等待指定的重试间隔
+                    time.sleep(self.retry_delay)
+                
+                # 下载ts片段
+                response = requests.get(segment_url, headers=headers, stream=True, timeout=60)
+                response.raise_for_status()
+                
+                # 保存文件
+                file_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
+                
+                # 检查是否需要解密
+                if self.is_encrypted and self.key:
+                    # 读取加密数据
+                    encrypted_data = response.content
+                    
+                    # 设置IV（如果未指定，使用片段序号）
+                    if self.iv is None:
+                        # 通常IV是16字节的，这里使用index的16字节表示
+                        iv = index.to_bytes(16, byteorder='big')
+                    else:
+                        iv = self.iv
+                    
+                    # 创建解密器
+                    cipher = Cipher(algorithms.AES(self.key), modes.CBC(iv), backend=default_backend())
+                    decryptor = cipher.decryptor()
+                    
+                    # 解密数据
+                    decrypted_data = decryptor.update(encrypted_data) + decryptor.finalize()
+                    
+                    # 保存解密后的数据
+                    with open(file_path, 'wb') as f:
+                        f.write(decrypted_data)
+                    
+                    self.total_size += len(decrypted_data)
+                else:
+                    # 直接保存未加密的数据
+                    with open(file_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                self.total_size += len(chunk)
+                
+                self.success_count += 1
+                success = True
+                
+                # 显示下载进度
+                elapsed_time = time.time() - self.start_time
+                speed = self.total_size / elapsed_time if elapsed_time > 0 else 0
+                progress = (self.success_count + self.fail_count) / len(self.segments) * 100
+                
+                sys.stdout.write(f"\r下载进度: {progress:.2f}% | 成功: {self.success_count} | 失败: {self.fail_count} | 重试: {self.retry_count} | 速度: {speed/1024/1024:.2f} MB/s")
+                sys.stdout.flush()
+                
+            except Exception as e:
+                last_error = e
+                retries += 1
+        
+        # 如果所有重试都失败
+        if not success:
             self.fail_count += 1
-            print(f"\n下载片段 {index} 失败: {e}")
+            print(f"\n下载片段 {index} 失败 (已尝试{retries-1}次): {last_error}")
 
     def download_all_segments(self):
         print(f"开始下载 {len(self.segments)} 个ts片段到 {self.temp_dir}")
@@ -193,8 +215,11 @@ class M3U8Downloader:
         
         print("\n所有片段下载完成")
         
+        if self.retry_count > 0:
+            print(f"重试统计: 共尝试重试 {self.retry_count} 次")
+            
         if self.fail_count > 0:
-            print(f"注意: 有 {self.fail_count} 个片段下载失败")
+            print(f"注意: 有 {self.fail_count} 个片段下载失败 (已重试所有可能)")
         
         return self.fail_count == 0
 
@@ -241,15 +266,16 @@ class M3U8Downloader:
         
         # 使用ffmpeg合并视频
         try:
+            # 添加-y参数自动覆盖已存在的文件，无需用户确认
+            # 不捕获输出，让ffmpeg的输出直接显示在终端中
             subprocess.run(
-                [ffmpeg_path, '-f', 'concat', '-safe', '0', '-i', file_list_path, '-c', 'copy', output_path],
-                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                [ffmpeg_path, '-y', '-f', 'concat', '-safe', '0', '-i', file_list_path, '-c', 'copy', output_path],
+                check=True
             )
             print("视频合并成功")
             return True
-        except subprocess.CalledProcessError as e:
-            print(f"视频合并失败: {e}")
-            print(e.stderr.decode())
+        except subprocess.CalledProcessError:
+            print("视频合并失败")
             return False
 
     def cleanup(self):
@@ -272,8 +298,19 @@ def main():
     print("欢迎使用m3u8视频下载器")
     print("注意：本程序需要ffmpeg支持，请确保已安装并添加到环境变量")
     
-    # 获取m3u8网址（优先从命令行参数获取）
+    # 解析命令行参数
     m3u8_url = None
+    keep_segments = False
+    
+    # 检查是否有--keep-segments或-k参数
+    if '--keep-segments' in sys.argv:
+        keep_segments = True
+        sys.argv.remove('--keep-segments')
+    elif '-k' in sys.argv:
+        keep_segments = True
+        sys.argv.remove('-k')
+    
+    # 获取m3u8网址（优先从命令行参数获取）
     if len(sys.argv) > 1:
         m3u8_url = sys.argv[1].strip()
     
@@ -284,6 +321,12 @@ def main():
     if not m3u8_url:
         print("网址不能为空")
         return
+    
+    # 显示当前的清理设置
+    if keep_segments:
+        print("注意：将保留原始视频切片文件")
+    else:
+        print("注意：将自动清理临时视频切片文件")
     
     # 创建下载器实例
     downloader = M3U8Downloader(m3u8_url)
@@ -302,9 +345,10 @@ def main():
         
         # 合并ts片段为视频文件
         if downloader.merge_segments():
-            # 询问是否清理临时文件
-            choice = input("是否清理临时ts片段文件？(y/n): ").lower()
-            if choice == 'y':
+            # 根据命令行参数决定是否清理临时文件
+            if keep_segments:
+                print("已保留原始视频切片文件")
+            else:
                 downloader.cleanup()
             
             print(f"\n视频下载完成，保存在: {downloader.temp_dir}")
