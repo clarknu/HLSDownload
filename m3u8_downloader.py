@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import hashlib
+import json
 import requests
 import time
 import subprocess
@@ -32,6 +33,11 @@ class M3U8Downloader:
         self.iv = None
         # 测试模式：用于模拟部分片段下载失败
         self.test_mode = test_mode
+        # 断点续传相关
+        self.state_file = os.path.join(self.temp_dir, 'download_state.json')
+        self.downloaded_segments = set()  # 已成功下载的片段索引
+        self.failed_segments = set()     # 下载失败的片段索引
+        self._load_download_state()
 
     def _create_temp_dir(self):
         # 计算URL的哈希值作为目录名
@@ -122,10 +128,24 @@ class M3U8Downloader:
         success = False
         last_error = None
         
+        # 检查文件是否已存在且完整
+        segment_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
+        if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+            print(f"\n片段 {index} 已存在且完整，跳过下载")
+            self.downloaded_segments.add(index)
+            self.success_count += 1
+            return
+        
         # 测试模式：模拟部分片段下载失败（每5个片段中让第3个和第5个失败）
         if self.test_mode and (index % 5 == 2 or index % 5 == 4):
             self.fail_count += 1
+            self.failed_segments.add(index)
+            # 清理失败片段的本地文件
+            segment_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
+            if os.path.exists(segment_path):
+                os.remove(segment_path)
             print(f"\n测试模式: 模拟片段 {index} 下载失败")
+            self._save_download_state()
             return
         
         # 确保URL是完整的
@@ -195,6 +215,8 @@ class M3U8Downloader:
                 
                 self.success_count += 1
                 success = True
+                self.downloaded_segments.add(index)
+                self.failed_segments.discard(index)
                 
                 # 显示下载进度
                 elapsed_time = time.time() - self.start_time
@@ -211,14 +233,56 @@ class M3U8Downloader:
         # 如果所有重试都失败
         if not success:
             self.fail_count += 1
+            self.failed_segments.add(index)
+            # 清理失败片段的本地文件
+            segment_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
+            if os.path.exists(segment_path):
+                os.remove(segment_path)
             print(f"\n下载片段 {index} 失败 (已尝试{retries-1}次): {last_error}")
+            
+        # 保存下载状态
+        self._save_download_state()
 
     def download_all_segments(self):
-        print(f"开始下载 {len(self.segments)} 个ts片段到 {self.temp_dir}")
+        # 重新初始化计数器，确保准确
+        self.success_count = 0
+        self.fail_count = 0
+        self.retry_count = 0
+        
+        # 计算需要下载的片段数量
+        segments_to_download = []
+        for i, segment in enumerate(self.segments):
+            segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+            if not os.path.exists(segment_path) or os.path.getsize(segment_path) == 0 or i in self.failed_segments:
+                segments_to_download.append((segment, i))
+            else:
+                # 文件存在且不为空，视为下载成功
+                self.success_count += 1
+        
+        # 如果所有片段都已下载完成且没有失败片段
+        if not segments_to_download and self.fail_count == 0:
+            print(f"所有 {len(self.segments)} 个ts片段已下载完成，无需重新下载")
+            return True
+        
+        # 显示需要下载的片段信息
+        print(f"开始下载 {len(segments_to_download)} 个ts片段到 {self.temp_dir}")
+        if len(self.segments) > len(segments_to_download):
+            print(f"跳过 {len(self.segments) - len(segments_to_download)} 个已成功下载的片段")
+        
+        # 如果有失败片段，显示相关信息
+        if self.failed_segments:
+            print(f"发现 {len(self.failed_segments)} 个标记为失败的片段，将重新下载")
+            # 清理失败片段的本地文件
+            for i in self.failed_segments:
+                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+                if os.path.exists(segment_path):
+                    os.remove(segment_path)
+                    print(f"已删除失败片段文件: segment_{i:05d}.ts")
+        
         self.start_time = time.time()
         
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            for i, segment in enumerate(self.segments):
+            for segment, i in segments_to_download:
                 executor.submit(self._download_segment, segment, i)
         
         print("\n所有片段下载完成")
@@ -286,6 +350,45 @@ class M3U8Downloader:
             print("视频合并失败")
             return False
 
+    def _load_download_state(self):
+        """加载之前的下载状态"""
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                    self.downloaded_segments = set(state.get('downloaded_segments', []))
+                    self.failed_segments = set(state.get('failed_segments', []))
+                    
+                    # 检查哪些已下载的文件可能丢失了
+                    current_downloaded = set()
+                    for i in self.downloaded_segments:
+                        segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+                        if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
+                            current_downloaded.add(i)
+                        else:
+                            # 文件已丢失，需要重新下载
+                            self.failed_segments.add(i)
+                    
+                    self.downloaded_segments = current_downloaded
+                    print(f"加载下载状态成功: 已下载 {len(self.downloaded_segments)} 个片段，失败 {len(self.failed_segments)} 个片段")
+            except Exception as e:
+                print(f"加载下载状态失败: {e}")
+                self.downloaded_segments = set()
+                self.failed_segments = set()
+    
+    def _save_download_state(self):
+        """保存当前的下载状态"""
+        try:
+            state = {
+                'downloaded_segments': list(self.downloaded_segments),
+                'failed_segments': list(self.failed_segments),
+                'last_update_time': time.time()
+            }
+            with open(self.state_file, 'w', encoding='utf-8') as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存下载状态失败: {e}")
+    
     def cleanup(self):
         # 删除临时文件，但保留最终视频
         try:
@@ -297,6 +400,10 @@ class M3U8Downloader:
             file_list_path = os.path.join(self.temp_dir, "file_list.txt")
             if os.path.exists(file_list_path):
                 os.remove(file_list_path)
+            
+            # 清理下载状态文件
+            if os.path.exists(self.state_file):
+                os.remove(self.state_file)
             
             print("临时文件清理完成")
         except Exception as e:
@@ -380,6 +487,8 @@ def main():
                 if downloader.success_count == 0:
                     print("错误：没有成功下载的片段，无法进行合并")
                     return
+                # 更新下载状态
+                downloader._save_download_state()
         
         # 合并ts片段为视频文件
         if downloader.merge_segments():
