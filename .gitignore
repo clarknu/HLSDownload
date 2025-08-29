@@ -137,4 +137,10 @@ ffmpeg*
 
 # Temporary download folders
 [0-9a-f]*\/
-f967c8462a63eec8837167652be13681/download_state.json
+
+# Runtime files
+*/download_state.json
+*/file_list.txt
+
+# Log files created during runtime
+*.log

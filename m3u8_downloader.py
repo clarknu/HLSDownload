@@ -84,9 +84,15 @@ class M3U8Downloader:
                     if not self.key_url.startswith('http'):
                         self.key_url = urljoin(self.m3u8_url, self.key_url)
                     
-                    # 下载密钥
+                    # 下载密钥，添加请求头避免403错误
                     print(f"正在下载密钥: {self.key_url}")
-                    key_response = requests.get(self.key_url, timeout=30)
+                    key_headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+                        'Accept': '*/*',
+                        'Accept-Language': 'zh-CN,zh;q=0.9',
+                        'Referer': self.base_url,
+                    }
+                    key_response = requests.get(self.key_url, headers=key_headers, timeout=30)
                     key_response.raise_for_status()
                     self.key = key_response.content
                     
@@ -107,7 +113,8 @@ class M3U8Downloader:
                     return False
             
             # 解析m3u8文件，获取所有ts片段的URL
-            ts_pattern = re.compile(r'[^#][^\n]*\.ts')
+            # 改进正则表达式，更精确地匹配真正的TS片段URL（不包含#开头的行，且是独立的.ts文件）
+            ts_pattern = re.compile(r'^(?!#)[^\n]*\.ts\s*$', re.MULTILINE)
             self.segments = ts_pattern.findall(m3u8_content)
             
             # 清理URL中的换行符和空白字符
