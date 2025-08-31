@@ -226,8 +226,12 @@ class M3U8Downloader:
                 self.failed_segments.discard(index)
                 
                 # 显示下载进度
-                elapsed_time = time.time() - self.start_time
-                speed = self.total_size / elapsed_time if elapsed_time > 0 else 0
+                if self.start_time is not None:
+                    elapsed_time = time.time() - self.start_time
+                    speed = self.total_size / elapsed_time if elapsed_time > 0 else 0
+                else:
+                    elapsed_time = 0
+                    speed = 0
                 progress = (self.success_count + self.fail_count) / len(self.segments) * 100
                 
                 sys.stdout.write(f"\r下载进度: {progress:.2f}% | 成功: {self.success_count} | 失败: {self.fail_count} | 重试: {self.retry_count} | 速度: {speed/1024/1024:.2f} MB/s")
@@ -311,12 +315,32 @@ class M3U8Downloader:
         
         output_path = os.path.join(self.temp_dir, output_filename)
         
-        # 检查是否有ffmpeg
-        ffmpeg_path = shutil.which('ffmpeg')
+        # 优先检查预设的ffmpeg路径
+        ffmpeg_path = None
+        potential_paths = [
+            r"C:\Soft\ffmpeg\ffmpeg.exe",  # 用户指定的路径
+            "ffmpeg",  # 系统PATH中的ffmpeg
+        ]
+        
+        for path in potential_paths:
+            if path == "ffmpeg":
+                # 使用shutil.which检查PATH中的ffmpeg
+                found_path = shutil.which('ffmpeg')
+                if found_path:
+                    ffmpeg_path = found_path
+                    print(f"找到系统PATH中的ffmpeg: {ffmpeg_path}")
+                    break
+            else:
+                # 检查具体路径
+                if os.path.exists(path):
+                    ffmpeg_path = path
+                    print(f"找到预设路径的ffmpeg: {ffmpeg_path}")
+                    break
         
         if not ffmpeg_path:
             print("未找到ffmpeg，请先安装ffmpeg")
             print("Windows用户可以从https://ffmpeg.org/download.html下载，并将bin目录添加到环境变量")
+            print("或者确保ffmpeg.exe位于 C:\\Soft\\ffmpeg\\ 目录下")
             
             # 询问用户是否要手动指定ffmpeg路径
             choice = input("是否要手动指定ffmpeg的路径？(y/n): ").lower()
