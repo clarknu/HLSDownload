@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 400px;
+            min-height: 300px;
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        
+        .header {
+            background: #1976d2;
+            color: white;
+            padding: 10px;
+            margin: -10px -10px 10px -10px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .stats {
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .controls {
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+        
+        button:hover {
+            background: #1565c0;
+        }
+        
+        button.clear {
+            background: #d32f2f;
+        }
+        
+        button.clear:hover {
+            background: #c62828;
+        }
+        
+        .m3u8-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        
+        .m3u8-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: white;
+        }
+        
+        .m3u8-url {
+            font-weight: bold;
+            color: #1976d2;
+            word-break: break-all;
+            margin-bottom: 4px;
+        }
+        
+        .m3u8-info {
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .m3u8-info span {
+            display: inline-block;
+            margin-right: 10px;
+        }
+        
+        .copy-btn {
+            background: #4caf50;
+            font-size: 12px;
+            padding: 4px 8px;
+            margin-top: 4px;
+        }
+        
+        .copy-btn:hover {
+            background: #45a049;
+        }
+        
+        .empty-message {
+            text-align: center;
+            color: #666;
+            padding: 20px;
+            font-style: italic;
+        }
+        
+        .export-section {
+            margin-top: 10px;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+        }
+        
+        .filter-section {
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .filter-section label {
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        
+        .filter-section select {
+            padding: 4px 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        M3U8 网络监控器
+    </div>
+    
+    <div class="stats">
+        已捕获 <span id="count">0</span> 个 M3U8 文件
+    </div>
+    
+    <div class="controls">
+        <button id="refresh">刷新</button>
+        <button id="clear" class="clear">清空</button>
+        <button id="export">导出</button>
+    </div>
+    
+    <div class="filter-section">
+        <label for="filter-select">过滤类型:</label>
+        <select id="filter-select">
+            <option value="all">所有链接</option>
+            <option value="verified">只显示已验证</option>
+            <option value="direct">只显示.m3u8文件</option>
+            <option value="unverified">只显示未验证</option>
+        </select>
+    </div>
+    
+    <div id="m3u8-list" class="m3u8-list">
+        <div class="empty-message">
+            暂无捕获的M3U8文件<br>
+            请访问包含视频的网页
+        </div>
+    </div>
+    
+    <div class="export-section">
+        <button id="copy-all">复制所有链接</button>
+        <button id="save-txt">保存为TXT</button>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

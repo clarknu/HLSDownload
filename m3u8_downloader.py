@@ -450,6 +450,27 @@ def main():
     m3u8_url = None
     keep_segments = False
     abort_on_error = False
+    test_mode = False
+    
+    # 检查帮助参数
+    if '--help' in sys.argv or '-h' in sys.argv:
+        print("使用方法：")
+        print("  python m3u8_downloader.py [M3U8_URL] [OPTIONS]")
+        print("")
+        print("参数：")
+        print("  M3U8_URL                      M3U8文件的网址")
+        print("")
+        print("选项：")
+        print("  -h, --help                    显示帮助信息")
+        print("  -k, --keep-segments           保留原始视频切片文件")
+        print("  -a, --abort-on-error          当有片段下载失败时终止程序")
+        print("  --test-mode                   启用测试模式（模拟部分片段下载失败）")
+        print("")
+        print("示例：")
+        print("  python m3u8_downloader.py https://example.com/video.m3u8")
+        print("  python m3u8_downloader.py --keep-segments")
+        print("  python m3u8_downloader.py https://example.com/video.m3u8 --abort-on-error")
+        return
     
     # 检查是否有--keep-segments或-k参数
     if '--keep-segments' in sys.argv:
@@ -466,6 +487,12 @@ def main():
     elif '-a' in sys.argv:
         abort_on_error = True
         sys.argv.remove('-a')
+    
+    # 检查是否有--test-mode参数（用于测试）
+    if '--test-mode' in sys.argv:
+        test_mode = True
+        sys.argv.remove('--test-mode')
+        print("注意：已启用测试模式，将模拟部分片段下载失败")
     
     # 获取m3u8网址（优先从命令行参数获取）
     if len(sys.argv) > 1:
@@ -489,13 +516,6 @@ def main():
         print("注意：当有片段下载失败时将终止程序，不进行合并")
     else:
         print("注意：当有片段下载失败时将自动排除失败片段，继续合并")
-    
-    # 检查是否有--test-mode参数（用于测试）
-    test_mode = False
-    if '--test-mode' in sys.argv:
-        test_mode = True
-        sys.argv.remove('--test-mode')
-        print("注意：已启用测试模式，将模拟部分片段下载失败")
     
     # 创建下载器实例
     downloader = M3U8Downloader(m3u8_url, test_mode=test_mode)
