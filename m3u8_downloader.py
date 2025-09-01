@@ -307,11 +307,13 @@ class M3U8Downloader:
         return self.fail_count == 0
 
     def merge_segments(self, output_filename=None):
-        # 默认输出文件名
+        # 默认输出文件名，生成更具唯一性的文件名
         if not output_filename:
             parsed_url = urlparse(self.m3u8_url)
-            domain = parsed_url.netloc.split('.')[-2]
-            output_filename = f"{domain}_video.mp4"
+            domain = parsed_url.netloc.replace('.', '_')  # 将域名中的点替换为下划线
+            timestamp = time.strftime('%Y%m%d_%H%M%S')  # 添加时间戳
+            random_str = hashlib.md5(self.m3u8_url.encode()).hexdigest()[:8]  # 基于URL生成随机字符串
+            output_filename = f"{domain}_{timestamp}_{random_str}.mp4"
         
         output_path = os.path.join(self.temp_dir, output_filename)
         
