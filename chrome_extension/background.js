@@ -92,7 +92,7 @@ function isValidM3U8Content(content) {
 }
 
 // 处理发现的M3U8链接
-function handleM3U8Found(url, details, source) {
+function handleM3U8Found(url, details, source, extraInfo = {}) {
   const domain = new URL(url).hostname;
   const timestamp = new Date().toISOString();
   
@@ -106,18 +106,36 @@ function handleM3U8Found(url, details, source) {
   
   if (needsVerification && source !== 'XHR Verified Content' && source !== 'Verified by Content') {
     // 尝试获取内容进行验证
-    verifyM3U8Content(url, details, source);
+    verifyM3U8Content(url, details, source, extraInfo);
     return;
   }
   
+  // 只收集下载时需要的关键信息
   const m3u8Info = {
     url: url,
     domain: domain,
     timestamp: timestamp,
-    tabId: details.tabId,
     source: source,
-    method: details.method || 'unknown',
-    initiator: details.initiator || 'unknown'
+    method: details.method || 'GET',
+    
+    // 页面上下文（用于设置正确的Referer）
+    pageUrl: extraInfo.pageUrl || '',
+    pageTitle: extraInfo.pageTitle || '',
+    
+    // 关键请求头（用于模拟浏览器请求）
+    headers: {
+      userAgent: extraInfo.userAgent || navigator.userAgent,
+      referer: extraInfo.referer || extraInfo.pageUrl || '',
+      origin: extraInfo.origin || '',
+      cookie: extraInfo.cookies || ''
+    },
+    
+    // 安全策略头（现代浏览器必需）
+    securityHeaders: {
+      secFetchSite: extraInfo.secFetchSite || 'same-origin',
+      secFetchMode: extraInfo.secFetchMode || 'cors',
+      secFetchDest: extraInfo.secFetchDest || 'empty'
+    }
   };
   
   capturedM3U8s.push(m3u8Info);
@@ -136,7 +154,7 @@ function handleM3U8Found(url, details, source) {
 }
 
 // 验证M3U8内容
-function verifyM3U8Content(url, details, originalSource) {
+function verifyM3U8Content(url, details, originalSource, extraInfo = {}) {
   fetch(url, {
     method: 'GET',
     headers: {
@@ -150,7 +168,7 @@ function verifyM3U8Content(url, details, originalSource) {
   .then(content => {
     if (isValidM3U8Content(content)) {
       // 内容验证通过，记录为正式的M3U8文件
-      handleM3U8Found(url, details, 'Verified by Content');
+      handleM3U8Found(url, details, 'Verified by Content', extraInfo);
     } else {
       console.log('M3U8 Monitor: 内容验证失败，不是真正的M3U8文件:', url);
     }
@@ -160,16 +178,66 @@ function verifyM3U8Content(url, details, originalSource) {
     // 验证失败，但如果URL看起来非常可靠，仍然记录
     if (url.toLowerCase().includes('.m3u8') || 
         (url.toLowerCase().includes('playlist') && url.toLowerCase().includes('m3u8'))) {
-      handleM3U8Found(url, details, originalSource + ' (Unverified)');
+      handleM3U8Found(url, details, originalSource + ' (Unverified)', extraInfo);
     }
   });
 }
+
+// 存储请求头信息的临时存储
+const requestHeadersCache = new Map();
+const pageInfoCache = new Map();
+
+// 监听请求头（发送时）
+chrome.webRequest.onBeforeSendHeaders.addListener(
+  function(details) {
+    if (isM3U8Url(details.url)) {
+      // 只收集关键的模拟请求头
+      const headers = {};
+      if (details.requestHeaders) {
+        details.requestHeaders.forEach(header => {
+          const name = header.name.toLowerCase();
+          // 只保留模拟浏览器请求所需的关键头
+          if (['referer', 'origin', 'user-agent', 'cookie', 
+               'sec-fetch-site', 'sec-fetch-mode', 'sec-fetch-dest'].includes(name)) {
+            headers[name] = header.value;
+          }
+        });
+      }
+      
+      // 缓存关键信息
+      requestHeadersCache.set(details.requestId, {
+        userAgent: headers['user-agent'] || navigator.userAgent,
+        referer: headers['referer'] || '',
+        origin: headers['origin'] || '',
+        cookies: headers['cookie'] || '',
+        secFetchSite: headers['sec-fetch-site'] || '',
+        secFetchMode: headers['sec-fetch-mode'] || '',
+        secFetchDest: headers['sec-fetch-dest'] || ''
+      });
+    }
+  },
+  {
+    urls: ["<all_urls>"],
+    types: ["main_frame", "sub_frame", "xmlhttprequest", "other", "media"]
+  },
+  ["requestHeaders"]
+);
 
 // 监听网络请求开始
 chrome.webRequest.onBeforeRequest.addListener(
   function(details) {
     if (isM3U8Url(details.url)) {
-      handleM3U8Found(details.url, details, 'Request');
+      // 获取缓存的请求头信息
+      const cachedInfo = requestHeadersCache.get(details.requestId) || {};
+      const pageInfo = pageInfoCache.get(details.tabId) || {};
+      
+      const extraInfo = {
+        ...cachedInfo,
+        pageUrl: pageInfo.url || '',
+        pageTitle: pageInfo.title || ''
+      };
+      
+      handleM3U8Found(details.url, details, 'Request', extraInfo);
     }
   },
   {
@@ -188,7 +256,20 @@ chrome.webRequest.onResponseStarted.addListener(
       });
       
       if (isM3U8Url(details.url) || isM3U8ContentType(headers)) {
-        handleM3U8Found(details.url, details, 'Response');
+        // 获取缓存的请求信息
+        const cachedInfo = requestHeadersCache.get(details.requestId) || {};
+        const pageInfo = pageInfoCache.get(details.tabId) || {};
+        
+        const extraInfo = {
+          ...cachedInfo,
+          pageUrl: pageInfo.url || '',
+          pageTitle: pageInfo.title || ''
+        };
+        
+        handleM3U8Found(details.url, details, 'Response', extraInfo);
+        
+        // 清理缓存（防止内存泄漏）
+        requestHeadersCache.delete(details.requestId);
       }
     }
   },
@@ -202,7 +283,19 @@ chrome.webRequest.onResponseStarted.addListener(
 // 监听来自content script的消息
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'M3U8_FOUND_BY_CONTENT') {
-    handleM3U8Found(message.url, { tabId: sender.tab.id }, 'Content Script');
+    const pageInfo = pageInfoCache.get(sender.tab.id) || {};
+    const extraInfo = {
+      pageUrl: pageInfo.url || sender.tab.url || '',
+      pageTitle: pageInfo.title || sender.tab.title || ''
+    };
+    handleM3U8Found(message.url, { tabId: sender.tab.id }, 'Content Script', extraInfo);
+  } else if (message.type === 'PAGE_INFO') {
+    // 收集页面信息
+    pageInfoCache.set(sender.tab.id, {
+      url: message.url,
+      title: message.title,
+      timestamp: Date.now()
+    });
   } else if (message.type === 'GET_CAPTURED_M3U8S') {
     sendResponse({ capturedM3U8s: capturedM3U8s });
   } else if (message.type === 'CLEAR_CAPTURED_M3U8S') {
@@ -217,6 +310,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('M3U8 Monitor: 已删除链接', urlToDelete);
     sendResponse({ success: true, count: capturedM3U8s.length });
   }
+});
+
+// 监听标签页更新事件
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url && tab.title) {
+    pageInfoCache.set(tabId, {
+      url: tab.url,
+      title: tab.title,
+      timestamp: Date.now()
+    });
+  }
+});
+
+// 清理关闭的标签页缓存
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pageInfoCache.delete(tabId);
 });
 
 // 从storage中恢复数据

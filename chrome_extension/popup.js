@@ -263,14 +263,43 @@ document.addEventListener('DOMContentLoaded', function() {
         const data = {
             timestamp: new Date().toISOString(),
             count: filteredM3U8s.length,
-            links: filteredM3U8s
+            links: filteredM3U8s.map(item => {
+                return {
+                    // 基本信息
+                    url: item.url,
+                    domain: item.domain,
+                    timestamp: item.timestamp,
+                    source: item.source,
+                    method: item.method || 'GET',
+                    
+                    // 页面上下文（用于设置正确的Referer）
+                    pageUrl: item.pageUrl || '',
+                    pageTitle: item.pageTitle || '',
+                    
+                    // 模拟浏览器请求的关键请求头
+                    headers: {
+                        userAgent: item.headers?.userAgent || navigator.userAgent,
+                        referer: item.headers?.referer || item.pageUrl || '',
+                        origin: item.headers?.origin || '',
+                        cookie: item.headers?.cookie || ''
+                    },
+                    
+                    // 现代浏览器安全策略头
+                    securityHeaders: {
+                        secFetchSite: item.securityHeaders?.secFetchSite || 'same-origin',
+                        secFetchMode: item.securityHeaders?.secFetchMode || 'cors',
+                        secFetchDest: item.securityHeaders?.secFetchDest || 'empty'
+                    }
+                };
+            })
         };
         
+        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-').slice(0, 19);
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `m3u8_links_${new Date().toISOString().split('T')[0]}.json`;
+        a.download = `m3u8_links_${timestamp}.json`;
         a.click();
         URL.revokeObjectURL(url);
     }
@@ -284,14 +313,42 @@ document.addEventListener('DOMContentLoaded', function() {
     // 保存为TXT
     function saveTxt() {
         const content = filteredM3U8s.map(item => {
-            return `${item.url}\n域名: ${item.domain}\n时间: ${new Date(item.timestamp).toLocaleString()}\n来源: ${item.source}\n${'='.repeat(50)}`;
+            const lines = [
+                `URL: ${item.url}`,
+                `域名: ${item.domain}`,
+                `时间: ${new Date(item.timestamp).toLocaleString()}`,
+                `来源: ${item.source}`,
+                `请求方法: ${item.method || 'GET'}`,
+                `页面URL: ${item.pageUrl || '未知'}`,
+                `页面标题: ${item.pageTitle || '未知'}`,
+                `User-Agent: ${item.headers?.userAgent || navigator.userAgent}`,
+                `Referer: ${item.headers?.referer || item.pageUrl || '无'}`,
+                `Origin: ${item.headers?.origin || '无'}`,
+                `Cookie: ${item.headers?.cookie || '无'}`,
+                `Sec-Fetch-Site: ${item.securityHeaders?.secFetchSite || 'same-origin'}`,
+                `Sec-Fetch-Mode: ${item.securityHeaders?.secFetchMode || 'cors'}`,
+                `Sec-Fetch-Dest: ${item.securityHeaders?.secFetchDest || 'empty'}`
+            ];
+            
+            return lines.join('\n') + '\n' + '='.repeat(80);
         }).join('\n\n');
         
-        const blob = new Blob([content], { type: 'text/plain' });
+        const header = [
+            'M3U8 链接导出文件 - 模拟浏览器请求信息',
+            `导出时间: ${new Date().toLocaleString()}`,
+            `总数: ${filteredM3U8s.length} 个链接`,
+            '='.repeat(80),
+            ''
+        ].join('\n');
+        
+        const fullContent = header + content;
+        
+        const timestamp = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-').slice(0, 19);
+        const blob = new Blob([fullContent], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `m3u8_links_${new Date().toISOString().split('T')[0]}.txt`;
+        a.download = `m3u8_links_${timestamp}.txt`;
         a.click();
         URL.revokeObjectURL(url);
     }

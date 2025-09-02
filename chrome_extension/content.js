@@ -1,6 +1,27 @@
 // 内容脚本 - 在页面中运行，补充网络监控
 console.log('M3U8 Monitor: 内容脚本已注入');
 
+// 发送页面信息到后台脚本
+function sendPageInfo() {
+  chrome.runtime.sendMessage({
+    type: 'PAGE_INFO',
+    url: window.location.href,
+    title: document.title,
+    referrer: document.referrer,
+    timestamp: Date.now()
+  }).catch(() => {}); // 忽略错误
+}
+
+// 页面加载时发送信息
+sendPageInfo();
+
+// 监听页面变化
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', sendPageInfo);
+} else {
+  sendPageInfo();
+}
+
 // 检查内容是否为真正的M3U8文件
 function isValidM3U8Content(content) {
   if (!content || typeof content !== 'string') return false;
