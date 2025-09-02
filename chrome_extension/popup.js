@@ -106,10 +106,16 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('切换URL显示，索引:', index);
         
         const itemElement = document.querySelector(`[data-url-index="${index}"]`);
-        const urlElement = itemElement ? itemElement.querySelector('.m3u8-url') : null;
-        
-        if (!urlElement || !filteredM3U8s[index]) {
+        if (!itemElement || !filteredM3U8s[index]) {
             console.error('找不到元素或数据，索引:', index);
+            return;
+        }
+        
+        const urlElement = itemElement.querySelector('.m3u8-url');
+        const toggleElement = itemElement.querySelector('.url-toggle');
+        
+        if (!urlElement || !toggleElement) {
+            console.error('找不到URL元素或切换按钮');
             return;
         }
         
@@ -126,16 +132,26 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (isCollapsed) {
             // 展开显示完整URL
-            urlElement.innerHTML = `${statusIcon} ${urlData.fullUrl} <span class="url-toggle" onclick="toggleUrlDisplay(${index})">折叠</span>`;
+            urlElement.innerHTML = `${statusIcon} ${urlData.fullUrl} <span class="url-toggle" data-index="${index}">折叠</span>`;
             urlElement.classList.remove('collapsed');
             urlElement.classList.add('expanded');
             console.log('已展开URL');
         } else {
             // 折叠显示简化URL
-            urlElement.innerHTML = `${statusIcon} ${urlData.displayUrl} <span class="url-toggle" onclick="toggleUrlDisplay(${index})">展开</span>`;
+            urlElement.innerHTML = `${statusIcon} ${urlData.displayUrl} <span class="url-toggle" data-index="${index}">展开</span>`;
             urlElement.classList.remove('expanded');
             urlElement.classList.add('collapsed');
             console.log('已折叠URL');
+        }
+        
+        // 重新绑定新的切换按钮事件
+        const newToggleElement = urlElement.querySelector('.url-toggle');
+        if (newToggleElement) {
+            newToggleElement.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const newIndex = parseInt(this.getAttribute('data-index'));
+                toggleUrlDisplay(newIndex);
+            });
         }
     }
     
@@ -155,7 +171,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // 切换按钮（只在需要时显示）
             const toggleButton = urlData.needsToggle ? 
-                ` <span class="url-toggle" onclick="toggleUrlDisplay(${index})">展开</span>` : '';
+                ` <span class="url-toggle" data-index="${index}">展开</span>` : '';
             
             // URL元素的样式类（只有需要切换的才添加collapsed类）
             const urlClass = urlData.needsToggle ? 'm3u8-url collapsed clickable' : 'm3u8-url';
@@ -179,6 +195,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }).join('');
         
         listElement.innerHTML = html;
+        
+        // 添加URL切换按钮事件监听
+        document.querySelectorAll('.url-toggle').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const index = parseInt(this.getAttribute('data-index'));
+                toggleUrlDisplay(index);
+            });
+        });
         
         // 添加复制按钮事件监听
         document.querySelectorAll('.copy-btn').forEach(btn => {
@@ -323,9 +348,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始化
     updateDisplay();
     
-    // 暴露函数到全局作用域供HTML调用
-    window.toggleUrlDisplay = toggleUrlDisplay;
-    
     // 添加调试信息
-    console.log('M3U8 Monitor Popup: 初始化完成，toggleUrlDisplay 函数已暴露到全局作用域');
+    console.log('M3U8 Monitor Popup: 初始化完成，使用addEventListener绑定事件');
 });
