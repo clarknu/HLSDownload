@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 if (filteredM3U8s.length === 0) {
                     if (capturedM3U8s.length === 0) {
-                        listElement.innerHTML = '<div class="empty-message">暂无捕获的M3U8文件<br>请访问包含视频的网页</div>';
+                        listElement.innerHTML = '<div class="empty-message">暂无M3U8历史记录<br>请访问包含视频的网页</div>';
                     } else {
                         listElement.innerHTML = '<div class="empty-message">当前过滤条件下无结果<br>请尝试其他过滤选项</div>';
                     }
@@ -61,37 +61,138 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // 渲染M3U8列表
+    // 处理URL显示：缩短并提供展开功能
+    function formatUrlForDisplay(url, index) {
+        try {
+            // 先检查是否包含查询参数
+            if (!url.includes('?')) {
+                return {
+                    displayUrl: url,
+                    needsToggle: false
+                };
+            }
+            
+            const urlObj = new URL(url);
+            const baseUrl = urlObj.origin + urlObj.pathname;
+            const hasQuery = urlObj.search.length > 0;
+            
+            if (!hasQuery) {
+                // 没有查询参数，直接显示
+                return {
+                    displayUrl: url,
+                    needsToggle: false
+                };
+            }
+            
+            // 有查询参数，默认显示基础URL
+            return {
+                displayUrl: baseUrl,
+                fullUrl: url,
+                needsToggle: true,
+                isCollapsed: true
+            };
+        } catch (e) {
+            console.warn('URL解析失败:', url, e);
+            // URL解析失败，直接显示
+            return {
+                displayUrl: url,
+                needsToggle: false
+            };
+        }
+    }
+    
+    // 切换URL显示状态
+    function toggleUrlDisplay(index) {
+        console.log('切换URL显示，索引:', index);
+        
+        const itemElement = document.querySelector(`[data-url-index="${index}"]`);
+        const urlElement = itemElement ? itemElement.querySelector('.m3u8-url') : null;
+        
+        if (!urlElement || !filteredM3U8s[index]) {
+            console.error('找不到元素或数据，索引:', index);
+            return;
+        }
+        
+        const item = filteredM3U8s[index];
+        const urlData = formatUrlForDisplay(item.url, index);
+        
+        if (!urlData.needsToggle) {
+            console.log('该URL不需要切换');
+            return;
+        }
+        
+        const isCollapsed = urlElement.classList.contains('collapsed');
+        const statusIcon = getStatusIcon(item);
+        
+        if (isCollapsed) {
+            // 展开显示完整URL
+            urlElement.innerHTML = `${statusIcon} ${urlData.fullUrl} <span class="url-toggle" onclick="toggleUrlDisplay(${index})">折叠</span>`;
+            urlElement.classList.remove('collapsed');
+            urlElement.classList.add('expanded');
+            console.log('已展开URL');
+        } else {
+            // 折叠显示简化URL
+            urlElement.innerHTML = `${statusIcon} ${urlData.displayUrl} <span class="url-toggle" onclick="toggleUrlDisplay(${index})">展开</span>`;
+            urlElement.classList.remove('expanded');
+            urlElement.classList.add('collapsed');
+            console.log('已折叠URL');
+        }
+    }
+    
+    // 获取状态图标
+    function getStatusIcon(item) {
+        const isVerified = item.source.includes('Verified') || item.url.toLowerCase().includes('.m3u8');
+        return isVerified ? '✅' : '⚠️';
+    }
     function renderM3U8List() {
         const html = filteredM3U8s.map((item, index) => {
             const time = new Date(item.timestamp).toLocaleString();
-            const isVerified = item.source.includes('Verified') || item.url.toLowerCase().includes('.m3u8');
-            const statusIcon = isVerified ? '✅' : '⚠️';
+            const statusIcon = getStatusIcon(item);
+            const urlData = formatUrlForDisplay(item.url, index);
+            
+            // 默认显示的URL（缩短版本）
+            const displayUrl = urlData.needsToggle ? urlData.displayUrl : item.url;
+            
+            // 切换按钮（只在需要时显示）
+            const toggleButton = urlData.needsToggle ? 
+                ` <span class="url-toggle" onclick="toggleUrlDisplay(${index})">展开</span>` : '';
+            
+            // URL元素的样式类（只有需要切换的才添加collapsed类）
+            const urlClass = urlData.needsToggle ? 'm3u8-url collapsed clickable' : 'm3u8-url';
             
             return `
-                <div class="m3u8-item">
-                    <div class="m3u8-url">${statusIcon} ${item.url}</div>
+                <div class="m3u8-item" data-url="${item.url}" data-url-index="${index}">
+                    <div class="${urlClass}">
+                        ${statusIcon} ${displayUrl}${toggleButton}
+                    </div>
                     <div class="m3u8-info">
                         <span>🌐 ${item.domain}</span>
                         <span>⏰ ${time}</span>
                         <span>📍 ${item.source}</span>
                     </div>
-                    <button class="copy-btn" data-url="${item.url}">复制链接</button>
+                    <div class="button-group">
+                        <button class="copy-btn" data-url="${item.url}">复制链接</button>
+                        <button class="delete-btn" data-url="${item.url}">删除</button>
+                    </div>
                 </div>
             `;
         }).join('');
         
         listElement.innerHTML = html;
         
-        // 添加复制按钮事件
+        // 添加复制按钮事件监听
         document.querySelectorAll('.copy-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const url = this.getAttribute('data-url');
                 copyToClipboard(url);
-                this.textContent = '已复制!';
-                setTimeout(() => {
-                    this.textContent = '复制链接';
-                }, 1000);
+            });
+        });
+        
+        // 添加删除按钮事件监听
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const url = this.getAttribute('data-url');
+                deleteM3U8Item(url);
             });
         });
     }
@@ -99,106 +200,132 @@ document.addEventListener('DOMContentLoaded', function() {
     // 复制到剪贴板
     function copyToClipboard(text) {
         navigator.clipboard.writeText(text).then(function() {
-            console.log('已复制到剪贴板:', text);
+            console.log('链接已复制到剪贴板:', text);
+            // 显示复制成功的提示
+            showToast('链接已复制到剪贴板');
         }).catch(function(err) {
             console.error('复制失败:', err);
+            // 显示复制失败的提示
+            showToast('复制失败，请手动复制', 'error');
         });
     }
     
-    // 刷新按钮
-    refreshBtn.addEventListener('click', function() {
-        updateDisplay();
-    });
+    // 显示提示信息
+    function showToast(message, type = 'success') {
+        const toast = document.createElement('div');
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: ${type === 'error' ? '#f44336' : '#4caf50'};
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            z-index: 10000;
+            font-size: 12px;
+        `;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            document.body.removeChild(toast);
+        }, 2000);
+    }
     
-    // 清空按钮
-    clearBtn.addEventListener('click', function() {
-        if (confirm('确定要清空所有捕获的M3U8链接吗？')) {
-            chrome.runtime.sendMessage({ type: 'CLEAR_CAPTURED_M3U8S' }, function(response) {
+    // 导出为JSON
+    function exportJSON() {
+        const data = {
+            timestamp: new Date().toISOString(),
+            count: filteredM3U8s.length,
+            links: filteredM3U8s
+        };
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `m3u8_links_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    // 复制所有链接
+    function copyAllLinks() {
+        const urls = filteredM3U8s.map(item => item.url).join('\n');
+        copyToClipboard(urls);
+    }
+    
+    // 保存为TXT
+    function saveTxt() {
+        const content = filteredM3U8s.map(item => {
+            return `${item.url}\n域名: ${item.domain}\n时间: ${new Date(item.timestamp).toLocaleString()}\n来源: ${item.source}\n${'='.repeat(50)}`;
+        }).join('\n\n');
+        
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `m3u8_links_${new Date().toISOString().split('T')[0]}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    
+    // 删除单个M3U8项目
+    function deleteM3U8Item(url) {
+        if (confirm('确定要删除这个链接吗？\n\n' + url)) {
+            chrome.runtime.sendMessage({ 
+                type: 'DELETE_M3U8_ITEM', 
+                url: url 
+            }, function(response) {
                 if (response && response.success) {
                     updateDisplay();
+                    showToast('已删除链接');
+                    console.log('已删除链接，剩余', response.count, '个');
+                } else {
+                    showToast('删除失败', 'error');
                 }
             });
         }
-    });
+    }
     
-    // 导出按钮
-    exportBtn.addEventListener('click', function() {
-        if (capturedM3U8s.length === 0) {
-            alert('没有可导出的M3U8链接');
-            return;
+    // 清空所有已捕获的链接
+    function clearCaptured() {
+        if (confirm('确定要清空所有已捕获的M3U8链接吗？\n\n此操作不可撤销！')) {
+            chrome.runtime.sendMessage({ type: 'CLEAR_CAPTURED_M3U8S' }, function(response) {
+                if (response && response.success) {
+                    updateDisplay();
+                    showToast('已清空所有链接');
+                    console.log('已清空所有历史链接');
+                } else {
+                    showToast('清空失败', 'error');
+                }
+            });
         }
-        
-        const exportData = {
-            exportTime: new Date().toISOString(),
-            count: capturedM3U8s.length,
-            m3u8s: capturedM3U8s
-        };
-        
-        const dataStr = JSON.stringify(exportData, null, 2);
-        const blob = new Blob([dataStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `m3u8_export_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
+    }
     
-    // 复制所有链接按钮
-    copyAllBtn.addEventListener('click', function() {
-        if (capturedM3U8s.length === 0) {
-            alert('没有可复制的M3U8链接');
-            return;
-        }
-        
-        const allUrls = capturedM3U8s.map(item => item.url).join('\n');
-        copyToClipboard(allUrls);
-        
-        copyAllBtn.textContent = '已复制!';
-        setTimeout(() => {
-            copyAllBtn.textContent = '复制所有链接';
-        }, 1000);
-    });
+    // 事件监听
+    refreshBtn.addEventListener('click', updateDisplay);
+    clearBtn.addEventListener('click', clearCaptured);
+    exportBtn.addEventListener('click', exportJSON);
+    copyAllBtn.addEventListener('click', copyAllLinks);
+    saveTxtBtn.addEventListener('click', saveTxt);
+    filterSelect.addEventListener('change', updateDisplay);
     
-    // 保存为TXT按钮
-    saveTxtBtn.addEventListener('click', function() {
-        if (capturedM3U8s.length === 0) {
-            alert('没有可保存的M3U8链接');
-            return;
-        }
-        
-        const content = capturedM3U8s.map((item, index) => {
-            const time = new Date(item.timestamp).toLocaleString();
-            return `${index + 1}. ${item.url}\n   域名: ${item.domain}\n   时间: ${time}\n   来源: ${item.source}\n`;
-        }).join('\n');
-        
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `m3u8_links_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
-    
-    // 过滤选择器事件
-    filterSelect.addEventListener('change', function() {
-        updateDisplay();
-    });
-    
-    // 监听来自background的消息
-    chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+    // 监听来自background script的消息
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.type === 'M3U8_FOUND') {
+            // 实时更新显示
             updateDisplay();
         }
     });
     
-    // 初始加载
+    // 初始化
     updateDisplay();
+    
+    // 暴露函数到全局作用域供HTML调用
+    window.toggleUrlDisplay = toggleUrlDisplay;
+    
+    // 添加调试信息
+    console.log('M3U8 Monitor Popup: 初始化完成，toggleUrlDisplay 函数已暴露到全局作用域');
 });

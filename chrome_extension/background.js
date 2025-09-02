@@ -209,6 +209,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     capturedM3U8s = [];
     chrome.storage.local.set({ capturedM3U8s: [] });
     sendResponse({ success: true });
+  } else if (message.type === 'DELETE_M3U8_ITEM') {
+    // 删除单个M3U8链接项目
+    const urlToDelete = message.url;
+    capturedM3U8s = capturedM3U8s.filter(item => item.url !== urlToDelete);
+    chrome.storage.local.set({ capturedM3U8s: capturedM3U8s });
+    console.log('M3U8 Monitor: 已删除链接', urlToDelete);
+    sendResponse({ success: true, count: capturedM3U8s.length });
   }
 });
 

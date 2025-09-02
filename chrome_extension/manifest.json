@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "M3U8 Network Monitor",
-  "version": "1.0",
-  "description": "监控并捕获页面中的M3U8网络请求",
+  "name": "M3U8 链接监控器",
+  "version": "2.1",
+  "description": "监控并捕获页面中的M3U8网络请求，识别并存储视频流链接地址",
   "permissions": [
     "webRequest",
     "storage",
-    "activeTab",
-    "tabs"
+    "activeTab"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -24,7 +23,7 @@
   ],
   "action": {
     "default_popup": "popup.html",
-    "default_title": "M3U8 Monitor",
+    "default_title": "M3U8 链接监控器",
     "default_icon": {
       "16": "icon16.png",
       "48": "icon48.png",
