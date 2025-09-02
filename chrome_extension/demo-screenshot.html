@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M3U8 链接监控器 - 截图演示</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #4CAF50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .demo-section {
+            padding: 30px;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .feature-card {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .feature-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+        
+        .popup-demo {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            width: 350px;
+            margin: 20px auto;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .popup-header {
+            background: #4CAF50;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .popup-content {
+            padding: 20px;
+        }
+        
+        .m3u8-item {
+            background: #f1f8e9;
+            border: 1px solid #c8e6c9;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        
+        .button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .button:hover {
+            background: #45a049;
+        }
+        
+        .status-bar {
+            background: #e8f5e8;
+            border: 1px solid #c8e6c9;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: center;
+            color: #2e7d32;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 M3U8 链接监控器</h1>
+            <p>智能监控和捕获HLS视频流链接的Chrome扩展</p>
+        </div>
+        
+        <div class="demo-section">
+            <h2 style="text-align: center; color: #333;">✨ 主要功能特性</h2>
+            
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🔍</div>
+                    <h3>实时监控</h3>
+                    <p>自动监控页面中的所有M3U8网络请求，无需手动操作</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📱</div>
+                    <h3>智能识别</h3>
+                    <p>准确识别HLS视频流链接，过滤无关网络请求</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">💾</div>
+                    <h3>本地存储</h3>
+                    <p>安全保存发现的链接，支持导出和管理</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>简洁界面</h3>
+                    <p>直观的弹窗界面，操作简单，体验流畅</p>
+                </div>
+            </div>
+            
+            <h2 style="text-align: center; color: #333; margin-top: 40px;">📱 扩展界面预览</h2>
+            
+            <div class="popup-demo">
+                <div class="popup-header">
+                    M3U8 链接监控器
+                </div>
+                <div class="popup-content">
+                    <div class="status-bar">
+                        ✅ 正在监控中... 已发现 3 个M3U8链接
+                    </div>
+                    
+                    <h4>📋 发现的链接:</h4>
+                    
+                    <div class="m3u8-item">
+                        <strong>视频1:</strong><br>
+                        https://example.com/video1/playlist.m3u8
+                        <br><br>
+                        <button class="button">📋 复制链接</button>
+                        <button class="button">📥 下载</button>
+                    </div>
+                    
+                    <div class="m3u8-item">
+                        <strong>视频2:</strong><br>
+                        https://example.com/live/stream.m3u8
+                        <br><br>
+                        <button class="button">📋 复制链接</button>
+                        <button class="button">📥 下载</button>
+                    </div>
+                    
+                    <div class="m3u8-item">
+                        <strong>视频3:</strong><br>
+                        https://example.com/movie/index.m3u8
+                        <br><br>
+                        <button class="button">📋 复制链接</button>
+                        <button class="button">📥 下载</button>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 20px;">
+                        <button class="button">🗑️ 清空列表</button>
+                        <button class="button">📤 导出全部</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px; color: #666;">
+                <p>💡 安装后，点击浏览器工具栏中的扩展图标即可打开监控界面</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
