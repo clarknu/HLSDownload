@@ -1,0 +1,46 @@
+{
+  "timestamp": "2025-01-05T10:30:00.000Z",
+  "count": 2,
+  "links": [
+    {
+      "url": "https://example.com/video1/playlist.m3u8",
+      "domain": "example.com",
+      "timestamp": 1704454200000,
+      "source": "Network Monitor (Verified)",
+      "method": "GET",
+      "pageUrl": "https://example.com/page1",
+      "pageTitle": "测试视频1",
+      "headers": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "referer": "https://example.com/page1",
+        "origin": "https://example.com",
+        "cookie": ""
+      },
+      "securityHeaders": {
+        "secFetchSite": "same-origin",
+        "secFetchMode": "cors",
+        "secFetchDest": "empty"
+      }
+    },
+    {
+      "url": "https://demo.example.org/media/video2.m3u8",
+      "domain": "demo.example.org",
+      "timestamp": 1704454400000,
+      "source": "Network Monitor (Verified)",
+      "method": "GET",
+      "pageUrl": "https://demo.example.org/player",
+      "pageTitle": "测试视频2",
+      "headers": {
+        "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "referer": "https://demo.example.org/player",
+        "origin": "https://demo.example.org",
+        "cookie": "session=abc123"
+      },
+      "securityHeaders": {
+        "secFetchSite": "same-origin",
+        "secFetchMode": "cors",
+        "secFetchDest": "empty"
+      }
+    }
+  ]
+}
