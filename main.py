@@ -71,7 +71,7 @@ def single_download(args):
     if args.referer:
         custom_headers['Referer'] = args.referer
     
-    # 创建下载器实例
+    # 创建下载器实例，传入output_dir参数
     from segment_downloader import SegmentDownloader
     downloader = SegmentDownloader(
         m3u8_url, 
@@ -79,7 +79,8 @@ def single_download(args):
         max_retries=args.max_retries,
         retry_delay=args.retry_delay,
         test_mode=args.test_mode,
-        custom_headers=custom_headers
+        custom_headers=custom_headers,
+        output_dir=args.output_dir  # 传入output_dir参数
     )
     
     try:

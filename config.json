@@ -6,7 +6,7 @@
   },
   "download_config": {
     "max_workers": 10,
-    "max_retries": 3,
+    "max_retries": 10,
     "retry_delay": 2,
     "max_concurrent_videos": 3,
     "max_workers_per_video": 10,
@@ -21,5 +21,5 @@
     "state_file": "download_state.json",
     "file_list": "file_list.txt"
   },
-  "output_dir": "downloads"
+  "output_dir": "E:\\MassDownload"
 }

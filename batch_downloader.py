@@ -110,7 +110,8 @@ class BatchDownloader:
             max_workers=self.max_workers_per_video,
             max_retries=3,
             retry_delay=2,
-            custom_headers=custom_headers
+            custom_headers=custom_headers,
+            output_dir=self.output_base_dir  # 传入output_base_dir参数
         )
     
     def _download_single_video(self, video_info, index):

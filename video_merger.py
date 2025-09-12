@@ -36,8 +36,10 @@ class VideoMerger:
         # 创建文件列表
         file_list_path = os.path.join(self.temp_dir, FILE_LIST_NAME)
         with open(file_list_path, 'w', encoding='utf-8') as f:
-            for i in range(len(self.segments)):
-                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+            for i, segment in enumerate(self.segments):
+                # 确定片段文件的扩展名
+                segment_extension = self._get_segment_extension(segment)
+                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.{segment_extension}")
                 if os.path.exists(segment_path):
                     f.write(f"file '{segment_path}'\n")
         
@@ -55,6 +57,24 @@ class VideoMerger:
         except subprocess.CalledProcessError:
             print("视频合并失败")
             return False
+    
+    def _get_segment_extension(self, segment_url):
+        """获取片段文件的扩展名"""
+        # 常见的视频/音频文件扩展名
+        common_extensions = ['ts', 'm4s', 'mp4', 'aac', 'm4a', 'mp3', 'wav', 'webm', 'ogg']
+        
+        # 从URL中提取文件名
+        filename = os.path.basename(segment_url.split('?')[0])  # 移除查询参数
+        
+        # 获取文件扩展名
+        if '.' in filename:
+            extension = filename.split('.')[-1].lower()
+            # 如果是常见扩展名，直接返回
+            if extension in common_extensions:
+                return extension
+        
+        # 默认返回ts扩展名
+        return 'ts'
     
     def _find_ffmpeg(self):
         """查找ffmpeg路径"""

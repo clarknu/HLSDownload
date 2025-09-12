@@ -11,23 +11,24 @@ from urllib.parse import urljoin
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
-from config import DEFAULT_HEADERS
+from config import DEFAULT_HEADERS, DEFAULT_OUTPUT_DIR
 from utils import ensure_complete_url, save_download_state
 
 class SegmentDownloader:
     """片段下载器类"""
     
-    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False, custom_headers=None):
+    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False, custom_headers=None, output_dir=None):
         self.m3u8_url = m3u8_url
         self.max_workers = max_workers
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.test_mode = test_mode
         self.custom_headers = custom_headers or {}
+        self.output_dir = output_dir or DEFAULT_OUTPUT_DIR  # 添加output_dir参数
         
         # 解析URL信息
         from utils import create_temp_dir, get_base_url
-        self.temp_dir = create_temp_dir(m3u8_url)
+        self.temp_dir = create_temp_dir(m3u8_url, self.output_dir)  # 传入output_dir参数
         self.base_url = get_base_url(m3u8_url)
         
         # 初始化状态
@@ -112,18 +113,26 @@ class SegmentDownloader:
                     print("无法解析密钥信息")
                     return False
             
-            # 解析m3u8文件，获取所有ts片段的URL
-            ts_pattern = re.compile(r'^(?!#)[^\n]*\.ts\s*$', re.MULTILINE)
-            self.segments = ts_pattern.findall(m3u8_content)
+            # 解析m3u8文件，获取所有视频片段的URL
+            # 改进正则表达式，匹配更多类型的视频片段文件
+            # 使用捕获组来获取完整的URL而不是仅扩展名
+            segment_pattern = re.compile(r'^(?!#)([^\n]*\.(?:ts|m4s|mp4|aac|m4a|mp3|wav|webm|ogg))\s*$', re.MULTILINE | re.IGNORECASE)
+            self.segments = segment_pattern.findall(m3u8_content)
+            
+            # 如果没有找到上述扩展名的文件，尝试更通用的模式
+            if not self.segments:
+                # 匹配不以#开头且包含点号的行（可能是文件名）
+                general_pattern = re.compile(r'^(?!#)([^\n]*\.[a-zA-Z0-9]+)\s*$', re.MULTILINE)
+                self.segments = general_pattern.findall(m3u8_content)
             
             # 清理URL中的换行符和空白字符
             self.segments = [segment.strip().replace('\n', '').replace('\r', '') for segment in self.segments]
             
             if not self.segments:
-                print("未找到ts片段")
+                print("未找到视频片段")
                 return False
             
-            print(f"找到 {len(self.segments)} 个ts片段")
+            print(f"找到 {len(self.segments)} 个视频片段")
             return True
         except Exception as e:
             print(f"下载m3u8文件失败: {e}")
@@ -135,8 +144,11 @@ class SegmentDownloader:
         success = False
         last_error = None
         
+        # 确定片段文件的扩展名
+        segment_extension = self._get_segment_extension(segment_url)
+        
         # 检查文件是否已存在且完整
-        segment_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
+        segment_path = os.path.join(self.temp_dir, f"segment_{index:05d}.{segment_extension}")
         if os.path.exists(segment_path) and os.path.getsize(segment_path) > 0:
             print(f"\n片段 {index} 已存在且完整，跳过下载")
             self.downloaded_segments.add(index)
@@ -170,12 +182,12 @@ class SegmentDownloader:
                     # 等待指定的重试间隔
                     time.sleep(self.retry_delay)
                 
-                # 下载ts片段
+                # 下载片段
                 response = requests.get(segment_url, headers=headers, stream=True, timeout=60)
                 response.raise_for_status()
                 
                 # 保存文件
-                file_path = os.path.join(self.temp_dir, f"segment_{index:05d}.ts")
+                file_path = os.path.join(self.temp_dir, f"segment_{index:05d}.{segment_extension}")
                 
                 # 检查是否需要解密
                 if self.is_encrypted and self.key:
@@ -242,6 +254,24 @@ class SegmentDownloader:
         # 保存下载状态
         self._save_download_state()
     
+    def _get_segment_extension(self, segment_url):
+        """获取片段文件的扩展名"""
+        # 常见的视频/音频文件扩展名
+        common_extensions = ['ts', 'm4s', 'mp4', 'aac', 'm4a', 'mp3', 'wav', 'webm', 'ogg']
+        
+        # 从URL中提取文件名
+        filename = os.path.basename(segment_url.split('?')[0])  # 移除查询参数
+        
+        # 获取文件扩展名
+        if '.' in filename:
+            extension = filename.split('.')[-1].lower()
+            # 如果是常见扩展名，直接返回
+            if extension in common_extensions:
+                return extension
+        
+        # 默认返回ts扩展名
+        return 'ts'
+    
     def download_all_segments(self):
         """下载所有片段"""
         # 重新初始化计数器，确保准确
@@ -252,7 +282,9 @@ class SegmentDownloader:
         # 计算需要下载的片段数量
         segments_to_download = []
         for i, segment in enumerate(self.segments):
-            segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+            # 确定片段文件的扩展名
+            segment_extension = self._get_segment_extension(segment)
+            segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.{segment_extension}")
             if not os.path.exists(segment_path) or os.path.getsize(segment_path) == 0 or i in self.failed_segments:
                 segments_to_download.append((segment, i))
             else:
@@ -261,11 +293,11 @@ class SegmentDownloader:
         
         # 如果所有片段都已下载完成且没有失败片段
         if not segments_to_download and self.fail_count == 0:
-            print(f"所有 {len(self.segments)} 个ts片段已下载完成，无需重新下载")
+            print(f"所有 {len(self.segments)} 个视频片段已下载完成，无需重新下载")
             return True
         
         # 显示需要下载的片段信息
-        print(f"开始下载 {len(segments_to_download)} 个ts片段到 {self.temp_dir}")
+        print(f"开始下载 {len(segments_to_download)} 个视频片段到 {self.temp_dir}")
         if len(self.segments) > len(segments_to_download):
             print(f"跳过 {len(self.segments) - len(segments_to_download)} 个已成功下载的片段")
         
@@ -274,10 +306,16 @@ class SegmentDownloader:
             print(f"发现 {len(self.failed_segments)} 个标记为失败的片段，将重新下载")
             # 清理失败片段的本地文件
             for i in self.failed_segments:
-                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+                # 确定片段文件的扩展名
+                if i < len(self.segments):
+                    segment_extension = self._get_segment_extension(self.segments[i])
+                else:
+                    segment_extension = 'ts'  # 默认扩展名
+                    
+                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.{segment_extension}")
                 if os.path.exists(segment_path):
                     os.remove(segment_path)
-                    print(f"已删除失败片段文件: segment_{i:05d}.ts")
+                    print(f"已删除失败片段文件: segment_{i:05d}.{segment_extension}")
         
         self.start_time = time.time()
         
@@ -299,7 +337,9 @@ class SegmentDownloader:
         """清理临时文件"""
         try:
             for i in range(len(self.segments)):
-                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
+                # 确定片段文件的扩展名
+                segment_extension = self._get_segment_extension(self.segments[i])
+                segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.{segment_extension}")
                 if os.path.exists(segment_path):
                     os.remove(segment_path)
             

@@ -7,11 +7,16 @@ import json
 import time
 from urllib.parse import urlparse, urljoin
 from datetime import datetime
+from config import DEFAULT_OUTPUT_DIR
 
-def create_temp_dir(m3u8_url):
+def create_temp_dir(m3u8_url, base_dir=None):
     """创建临时目录"""
+    # 如果没有指定基础目录，则使用默认输出目录
+    if base_dir is None:
+        base_dir = DEFAULT_OUTPUT_DIR
+    
     url_hash = hashlib.md5(m3u8_url.encode()).hexdigest()
-    temp_dir = os.path.join(os.getcwd(), url_hash)
+    temp_dir = os.path.join(base_dir, url_hash)
     if not os.path.exists(temp_dir):
         os.makedirs(temp_dir)
     return temp_dir
