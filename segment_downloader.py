@@ -17,12 +17,13 @@ from utils import ensure_complete_url, save_download_state
 class SegmentDownloader:
     """片段下载器类"""
     
-    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False):
+    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False, custom_headers=None):
         self.m3u8_url = m3u8_url
         self.max_workers = max_workers
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.test_mode = test_mode
+        self.custom_headers = custom_headers or {}
         
         # 解析URL信息
         from utils import create_temp_dir, get_base_url
@@ -59,11 +60,17 @@ class SegmentDownloader:
         """保存下载状态"""
         save_download_state(self.state_file, self.downloaded_segments, self.failed_segments)
     
+    def _get_headers(self):
+        """获取请求头"""
+        headers = DEFAULT_HEADERS.copy()
+        headers.update(self.custom_headers)
+        headers['Referer'] = self.base_url
+        return headers
+    
     def download_m3u8(self):
         """下载并解析M3U8文件"""
         try:
-            headers = DEFAULT_HEADERS.copy()
-            headers['Referer'] = self.base_url
+            headers = self._get_headers()
             
             response = requests.get(self.m3u8_url, headers=headers, timeout=30)
             response.raise_for_status()
@@ -84,8 +91,7 @@ class SegmentDownloader:
                     
                     # 下载密钥
                     print(f"正在下载密钥: {self.key_url}")
-                    key_headers = DEFAULT_HEADERS.copy()
-                    key_headers['Referer'] = self.base_url
+                    key_headers = self._get_headers()
                     key_response = requests.get(self.key_url, headers=key_headers, timeout=30)
                     key_response.raise_for_status()
                     self.key = key_response.content
@@ -152,8 +158,7 @@ class SegmentDownloader:
         segment_url = ensure_complete_url(segment_url, self.m3u8_url, self.base_url)
         
         # 添加请求头
-        headers = DEFAULT_HEADERS.copy()
-        headers['Referer'] = self.base_url
+        headers = self._get_headers()
         
         # 下载和重试逻辑
         while retries <= self.max_retries and not success:

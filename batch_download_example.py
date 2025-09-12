@@ -25,9 +25,15 @@ def main():
     print("3. 高级配置选项:")
     print("   --max-concurrent N    # 同时下载的视频数量 (默认: 3)")
     print("   --max-workers N       # 每个视频的最大线程数 (默认: 10)")
+    print("   --max-retries N       # 下载失败时的最大重试次数 (默认: 3)")
+    print("   --retry-delay N       # 重试间隔（秒） (默认: 2)")
     print("   --keep-segments       # 保留原始视频切片文件")
     print("   --abort-on-error      # 当有片段下载失败时终止程序")
     print("   --test-mode           # 启用测试模式（模拟部分片段下载失败）")
+    print("   --user-agent UA       # 自定义User-Agent")
+    print("   --referer URL         # 自定义Referer")
+    print("   --output-dir DIR      # 指定输出目录")
+    print("   --config FILE         # 指定配置文件路径")
     print()
     
     print("4. 使用流程:")
@@ -55,18 +61,30 @@ def main():
    }""")
     print()
     
-    print("6. 特性优势:")
+    print("6. 配置文件 (config.json):")
+    print("   程序会自动加载同目录下的config.json文件，可以修改以下配置:")
+    print("   - 默认请求头 (default_headers)")
+    print("   - 下载配置 (download_config)")
+    print("   - ffmpeg路径 (ffmpeg_paths)")
+    print("   - 临时文件名 (temp_file_names)")
+    print("   - 输出目录 (output_dir)")
+    print("   命令行参数的优先级高于配置文件设置")
+    print()
+    
+    print("7. 特性优势:")
     print("   ✅ 支持并行下载多个视频，提高效率")
     print("   ✅ 模块化设计，代码清晰易维护")
     print("   ✅ 智能断点续传，支持中断后恢复下载")
     print("   ✅ 详细的进度显示和错误报告")
     print("   ✅ 自动处理加密视频(AES-128)")
     print("   ✅ 生成详细的下载报告JSON文件")
+    print("   ✅ 支持外部配置文件和命令行参数")
     print()
     
-    print("7. 项目结构:")
+    print("8. 项目结构:")
     print("   ├── main.py              # 主程序入口")
     print("   ├── config.py            # 配置文件")
+    print("   ├── config.json          # 外部配置文件")
     print("   ├── models.py            # 数据模型")
     print("   ├── utils.py             # 工具函数")
     print("   ├── segment_downloader.py # 片段下载器")
@@ -78,7 +96,7 @@ def main():
     # 检查是否有测试文件
     test_file = "test_m3u8_batch.json"
     if os.path.exists(test_file):
-        print(f"8. 测试批量下载功能:")
+        print(f"9. 测试批量下载功能:")
         print(f"   发现测试文件: {test_file}")
         choice = input("   是否要运行测试批量下载? (y/n): ").lower().strip()
         if choice == 'y':

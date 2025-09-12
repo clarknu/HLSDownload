@@ -89,14 +89,28 @@ class BatchDownloader:
         """创建下载器实例"""
         if isinstance(video_info, dict):
             m3u8_url = video_info.get('url', '')
+            # 从视频信息中提取请求头
+            custom_headers = {}
+            if 'headers' in video_info:
+                headers = video_info['headers']
+                if 'userAgent' in headers:
+                    custom_headers['User-Agent'] = headers['userAgent']
+                if 'referer' in headers:
+                    custom_headers['Referer'] = headers['referer']
+                if 'origin' in headers:
+                    custom_headers['Origin'] = headers['origin']
+                if 'cookie' in headers:
+                    custom_headers['Cookie'] = headers['cookie']
         else:
             m3u8_url = str(video_info)
+            custom_headers = {}
         
         return SegmentDownloader(
             m3u8_url=m3u8_url,
             max_workers=self.max_workers_per_video,
             max_retries=3,
-            retry_delay=2
+            retry_delay=2,
+            custom_headers=custom_headers
         )
     
     def _download_single_video(self, video_info, index):
@@ -131,17 +145,17 @@ class BatchDownloader:
             success = downloader.download_all_segments()
             
             if success:
-                # 合并视频片段
+                # 合并视频片段到指定的输出目录
                 from video_merger import VideoMerger
-                merger = VideoMerger(downloader.temp_dir, downloader.segments)
+                merger = VideoMerger(downloader.temp_dir, downloader.segments, self.output_base_dir)
                 if merger.merge_segments():
                     result.status = 'completed'
-                    result.output_dir = downloader.temp_dir
+                    result.output_dir = self.output_base_dir
                     
                     with self.lock:
                         self.completed_videos += 1
                         print(f"\n✅ [{index+1}/{self.total_videos}] 下载完成: {domain}")
-                        print(f"输出目录: {downloader.temp_dir}")
+                        print(f"输出目录: {self.output_base_dir}")
                 else:
                     result.status = 'failed'
                     result.error = '视频合并失败'

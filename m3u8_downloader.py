@@ -20,12 +20,42 @@ from urllib.parse import urlparse, urljoin
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 
+# 默认请求头
+DEFAULT_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+    'Accept': '*/*',
+    'Accept-Language': 'zh-CN,zh;q=0.9',
+}
+
+# 默认下载配置
+DEFAULT_DOWNLOAD_CONFIG = {
+    'max_workers': 10,
+    'max_retries': 3,
+    'retry_delay': 2,
+    'max_concurrent_videos': 3,
+    'max_workers_per_video': 10
+}
+
+# ffmpeg路径配置
+FFMPEG_PATHS = [
+    r"C:\Soft\ffmpeg\ffmpeg.exe",  # 用户指定的路径
+    "ffmpeg"  # 系统PATH中的ffmpeg
+]
+
+# 临时文件名
+STATE_FILE_NAME = 'download_state.json'
+FILE_LIST_NAME = 'file_list.txt'
+
+# 输出目录
+DEFAULT_OUTPUT_DIR = os.path.join(os.getcwd(), 'downloads')
+
 class M3U8Downloader:
-    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False):
+    def __init__(self, m3u8_url, max_workers=10, max_retries=3, retry_delay=2, test_mode=False, custom_headers=None):
         self.m3u8_url = m3u8_url
         self.max_workers = max_workers
         self.max_retries = max_retries  # 最大重试次数
         self.retry_delay = retry_delay  # 重试间隔（秒）
+        self.custom_headers = custom_headers or {}
         self.temp_dir = self._create_temp_dir()
         self.segments = []
         self.total_size = 0
@@ -42,10 +72,17 @@ class M3U8Downloader:
         # 测试模式：用于模拟部分片段下载失败
         self.test_mode = test_mode
         # 断点续传相关
-        self.state_file = os.path.join(self.temp_dir, 'download_state.json')
+        self.state_file = os.path.join(self.temp_dir, STATE_FILE_NAME)
         self.downloaded_segments = set()  # 已成功下载的片段索引
         self.failed_segments = set()     # 下载失败的片段索引
         self._load_download_state()
+
+    def _get_headers(self):
+        """获取请求头"""
+        headers = DEFAULT_HEADERS.copy()
+        headers.update(self.custom_headers)
+        headers['Referer'] = self.base_url
+        return headers
 
     def _create_temp_dir(self):
         # 计算URL的哈希值作为目录名
@@ -68,12 +105,7 @@ class M3U8Downloader:
     def _download_m3u8(self):
         try:
             # 添加浏览器请求头，避免403错误
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-                'Accept': '*/*',
-                'Accept-Language': 'zh-CN,zh;q=0.9',
-                'Referer': self.base_url,
-            }
+            headers = self._get_headers()
             
             response = requests.get(self.m3u8_url, headers=headers, timeout=30)
             response.raise_for_status()
@@ -94,12 +126,7 @@ class M3U8Downloader:
                     
                     # 下载密钥，添加请求头避免403错误
                     print(f"正在下载密钥: {self.key_url}")
-                    key_headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-                        'Accept': '*/*',
-                        'Accept-Language': 'zh-CN,zh;q=0.9',
-                        'Referer': self.base_url,
-                    }
+                    key_headers = self._get_headers()
                     key_response = requests.get(self.key_url, headers=key_headers, timeout=30)
                     key_response.raise_for_status()
                     self.key = key_response.content
@@ -172,12 +199,7 @@ class M3U8Downloader:
                 segment_url = f"{self.base_url}{segment_url}"
         
         # 添加浏览器请求头
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Referer': self.base_url,
-        }
+        headers = self._get_headers()
         
         # 下载和重试逻辑
         while retries <= self.max_retries and not success:
@@ -314,7 +336,8 @@ class M3U8Downloader:
         
         return self.fail_count == 0
 
-    def merge_segments(self, output_filename=None):
+    def merge_segments(self, output_filename=None, output_dir=None):
+        """合并视频片段"""
         # 默认输出文件名，生成更具唯一性的文件名
         if not output_filename:
             parsed_url = urlparse(self.m3u8_url)
@@ -323,16 +346,17 @@ class M3U8Downloader:
             random_str = hashlib.md5(self.m3u8_url.encode()).hexdigest()[:8]  # 基于URL生成随机字符串
             output_filename = f"{domain}_{timestamp}_{random_str}.mp4"
         
-        output_path = os.path.join(self.temp_dir, output_filename)
+        # 确定输出路径
+        if output_dir:
+            # 确保输出目录存在
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, output_filename)
+        else:
+            output_path = os.path.join(self.temp_dir, output_filename)
         
         # 优先检查预设的ffmpeg路径
         ffmpeg_path = None
-        potential_paths = [
-            r"C:\Soft\ffmpeg\ffmpeg.exe",  # 用户指定的路径
-            "ffmpeg",  # 系统PATH中的ffmpeg
-        ]
-        
-        for path in potential_paths:
+        for path in FFMPEG_PATHS:
             if path == "ffmpeg":
                 # 使用shutil.which检查PATH中的ffmpeg
                 found_path = shutil.which('ffmpeg')
@@ -364,11 +388,11 @@ class M3U8Downloader:
                 print("\n您可以稍后手动合并视频片段。合并方法：")
                 print(f"1. 安装ffmpeg")
                 print(f"2. 打开命令行，切换到目录: {self.temp_dir}")
-                print(f"3. 运行命令: ffmpeg -f concat -safe 0 -i file_list.txt -c copy {output_filename}")
+                print(f"3. 运行命令: ffmpeg -f concat -safe 0 -i {FILE_LIST_NAME} -c copy {output_filename}")
                 return False
         
         # 创建文件列表
-        file_list_path = os.path.join(self.temp_dir, "file_list.txt")
+        file_list_path = os.path.join(self.temp_dir, FILE_LIST_NAME)
         with open(file_list_path, 'w', encoding='utf-8') as f:
             for i in range(len(self.segments)):
                 segment_path = os.path.join(self.temp_dir, f"segment_{i:05d}.ts")
@@ -438,7 +462,7 @@ class M3U8Downloader:
                 if os.path.exists(segment_path):
                     os.remove(segment_path)
             
-            file_list_path = os.path.join(self.temp_dir, "file_list.txt")
+            file_list_path = os.path.join(self.temp_dir, FILE_LIST_NAME)
             if os.path.exists(file_list_path):
                 os.remove(file_list_path)
             
@@ -456,7 +480,7 @@ class BatchM3U8Downloader:
     支持处理Chrome扩展导出的JSON文件，实现批量下载和并行处理
     """
     
-    def __init__(self, json_file_path, max_concurrent_videos=3, max_workers_per_video=10, output_base_dir=None):
+    def __init__(self, json_file_path, max_concurrent_videos=3, max_workers_per_video=10, output_base_dir=None, custom_headers=None):
         """
         初始化批量下载器
         
@@ -465,10 +489,12 @@ class BatchM3U8Downloader:
             max_concurrent_videos: 同时下载的视频数量
             max_workers_per_video: 每个视频的最大线程数
             output_base_dir: 输出目录，默认为当前目录下的downloads文件夹
+            custom_headers: 自定义请求头
         """
         self.json_file_path = json_file_path
         self.max_concurrent_videos = max_concurrent_videos
         self.max_workers_per_video = max_workers_per_video
+        self.custom_headers = custom_headers or {}
         self.video_list = []
         self.download_results = []
         self.start_time = None
@@ -476,7 +502,7 @@ class BatchM3U8Downloader:
         
         # 设置输出目录
         if output_base_dir is None:
-            self.output_base_dir = os.path.join(os.getcwd(), 'downloads')
+            self.output_base_dir = DEFAULT_OUTPUT_DIR
         else:
             self.output_base_dir = output_base_dir
             
@@ -544,30 +570,17 @@ class BatchM3U8Downloader:
         if isinstance(video_info, dict):
             m3u8_url = video_info.get('url', '')
             
-            # 创建下载器实例
-            downloader = M3U8Downloader(
-                m3u8_url=m3u8_url,
-                max_workers=self.max_workers_per_video,
-                max_retries=3,
-                retry_delay=2
-            )
-            
             # 应用Chrome扩展收集的请求头信息
+            enhanced_headers = self.custom_headers.copy()
             if 'headers' in video_info:
                 headers = video_info['headers']
-                enhanced_headers = {
-                    'User-Agent': headers.get('userAgent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'),
-                    'Accept': '*/*',
-                    'Accept-Language': 'zh-CN,zh;q=0.9',
-                    'Referer': headers.get('referer', ''),
-                }
-                
-                # 添加Origin头
-                if headers.get('origin'):
+                if 'userAgent' in headers:
+                    enhanced_headers['User-Agent'] = headers['userAgent']
+                if 'referer' in headers:
+                    enhanced_headers['Referer'] = headers['referer']
+                if 'origin' in headers:
                     enhanced_headers['Origin'] = headers['origin']
-                
-                # 添加Cookie（如果有）
-                if headers.get('cookie'):
+                if 'cookie' in headers:
                     enhanced_headers['Cookie'] = headers['cookie']
                 
                 # 添加现代浏览器安全头
@@ -578,77 +591,23 @@ class BatchM3U8Downloader:
                         'Sec-Fetch-Mode': sec_headers.get('secFetchMode', 'cors'),
                         'Sec-Fetch-Dest': sec_headers.get('secFetchDest', 'empty')
                     })
-                
-                # 覆盖下载器的默认请求头方法
-                original_download_m3u8 = downloader._download_m3u8
-                original_download_segment = downloader._download_segment
-                
-                def enhanced_download_m3u8():
-                    # 使用增强的请求头下载M3U8
-                    try:
-                        response = requests.get(downloader.m3u8_url, headers=enhanced_headers, timeout=30)
-                        response.raise_for_status()
-                        m3u8_content = response.text
-                        
-                        # 检查是否为加密的m3u8文件 - 复用原逻辑
-                        if '#EXT-X-KEY' in m3u8_content:
-                            downloader.is_encrypted = True
-                            print("检测到加密的m3u8文件，正在解析密钥信息...")
-                            
-                            key_match = re.search(r'#EXT-X-KEY:METHOD=AES-128,URI="(.*?)"', m3u8_content)
-                            if key_match:
-                                downloader.key_url = key_match.group(1)
-                                if not downloader.key_url.startswith('http'):
-                                    downloader.key_url = urljoin(downloader.m3u8_url, downloader.key_url)
-                                
-                                print(f"正在下载密钥: {downloader.key_url}")
-                                key_response = requests.get(downloader.key_url, headers=enhanced_headers, timeout=30)
-                                key_response.raise_for_status()
-                                downloader.key = key_response.content
-                                
-                                iv_match = re.search(r'IV=(.*?)(?:,|\r|\n)', m3u8_content)
-                                if iv_match:
-                                    iv_hex = iv_match.group(1)
-                                    if iv_hex.startswith('0x'):
-                                        iv_hex = iv_hex[2:]
-                                    downloader.iv = bytes.fromhex(iv_hex)
-                                else:
-                                    downloader.iv = None
-                                
-                                print("密钥解析成功")
-                            else:
-                                print("无法解析密钥信息")
-                                return False
-                        
-                        # 解析ts片段
-                        ts_pattern = re.compile(r'^(?!#)[^\n]*\.ts\s*$', re.MULTILINE)
-                        downloader.segments = ts_pattern.findall(m3u8_content)
-                        downloader.segments = [segment.strip().replace('\n', '').replace('\r', '') for segment in downloader.segments]
-                        
-                        if not downloader.segments:
-                            print("未找到ts片段")
-                            return False
-                        
-                        print(f"找到 {len(downloader.segments)} 个ts片段")
-                        return True
-                        
-                    except Exception as e:
-                        print(f"下载m3u8文件失败: {e}")
-                        return False
-                
-                def enhanced_download_segment(segment_url, index):
-                    # 使用增强的请求头下载片段
-                    return original_download_segment(segment_url, index)
-                
-                # 更新下载器方法
-                downloader._download_m3u8 = enhanced_download_m3u8
-                
+            
+            # 创建下载器实例
+            downloader = M3U8Downloader(
+                m3u8_url=m3u8_url,
+                max_workers=self.max_workers_per_video,
+                max_retries=3,
+                retry_delay=2,
+                custom_headers=enhanced_headers
+            )
+            
             return downloader
         else:
             # 简单字符串URL
             return M3U8Downloader(
                 m3u8_url=str(video_info),
-                max_workers=self.max_workers_per_video
+                max_workers=self.max_workers_per_video,
+                custom_headers=self.custom_headers
             )
     
     def _download_single_video(self, video_info, index):
@@ -835,150 +794,37 @@ class BatchM3U8Downloader:
         except Exception as e:
             print(f"保存下载报告失败: {e}")
 
-def main():
-    print("欢迎使用M3U8视频下载器")
-    print("支持单个视频下载和Chrome扩展JSON文件批量下载")
-    print("注意：本程序需要ffmpeg支持，请确保已安装并添加到环境变量")
+def parse_args():
+    """解析命令行参数"""
+    import argparse
+    parser = argparse.ArgumentParser(description='M3U8视频下载器')
+    parser.add_argument('url', nargs='?', help='M3U8文件的网址')
+    parser.add_argument('--batch', help='批量下载模式，指定JSON文件路径')
+    parser.add_argument('--keep-segments', action='store_true', help='保留原始视频切片文件')
+    parser.add_argument('--abort-on-error', action='store_true', help='当有片段下载失败时终止程序')
+    parser.add_argument('--test-mode', action='store_true', help='启用测试模式（模拟部分片段下载失败）')
+    parser.add_argument('--max-concurrent', type=int, default=DEFAULT_DOWNLOAD_CONFIG['max_concurrent_videos'], 
+                        help='同时下载的视频数量')
+    parser.add_argument('--max-workers', type=int, default=DEFAULT_DOWNLOAD_CONFIG['max_workers_per_video'], 
+                        help='每个视频的最大线程数')
+    parser.add_argument('--max-retries', type=int, default=DEFAULT_DOWNLOAD_CONFIG['max_retries'],
+                        help='下载失败时的最大重试次数')
+    parser.add_argument('--retry-delay', type=int, default=DEFAULT_DOWNLOAD_CONFIG['retry_delay'],
+                        help='重试间隔（秒）')
+    parser.add_argument('--user-agent', type=str, default=DEFAULT_HEADERS['User-Agent'],
+                        help='自定义User-Agent')
+    parser.add_argument('--referer', type=str, help='自定义Referer')
+    parser.add_argument('--output-dir', type=str, default=DEFAULT_OUTPUT_DIR,
+                        help='输出目录')
     
-    # 解析命令行参数
-    m3u8_url = None
-    json_file = None
-    keep_segments = False
-    abort_on_error = False
-    test_mode = False
-    max_concurrent_videos = 3
-    max_workers_per_video = 10
+    return parser.parse_args()
+
+def single_download(args):
+    """单个视频下载"""
+    print("=== 单个视频下载模式 ===")
     
-    # 检查帮助参数
-    if '--help' in sys.argv or '-h' in sys.argv:
-        print("")
-        print("使用方法：")
-        print("  单个视频下载:")
-        print("    python m3u8_downloader.py [M3U8_URL] [OPTIONS]")
-        print("")
-        print("  批量下载 (从Chrome扩展JSON文件):")
-        print("    python m3u8_downloader.py --batch [JSON_FILE] [OPTIONS]")
-        print("")
-        print("参数：")
-        print("  M3U8_URL                      M3U8文件的网址")
-        print("  JSON_FILE                     Chrome扩展导出的JSON文件路径")
-        print("")
-        print("选项：")
-        print("  -h, --help                    显示帮助信息")
-        print("  --batch                       启用批量下载模式")
-        print("  -k, --keep-segments           保留原始视频切片文件")
-        print("  -a, --abort-on-error          当有片段下载失败时终止程序")
-        print("  --test-mode                   启用测试模式（模拟部分片段下载失败）")
-        print("  --max-concurrent N            同时下载的视频数量 (默认: 3)")
-        print("  --max-workers N               每个视频的最大线程数 (默认: 10)")
-        print("")
-        print("示例：")
-        print("  # 单个视频下载")
-        print("  python m3u8_downloader.py https://example.com/video.m3u8")
-        print("  python m3u8_downloader.py https://example.com/video.m3u8 --keep-segments")
-        print("")
-        print("  # 批量下载")
-        print("  python m3u8_downloader.py --batch m3u8_links_20231201_143022.json")
-        print("  python m3u8_downloader.py --batch m3u8_links.json --max-concurrent 5 --max-workers 8")
-        return
-    
-    # 处理命令行参数
-    args = sys.argv[1:]
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        
-        if arg == '--batch':
-            if i + 1 < len(args):
-                json_file = args[i + 1]
-                i += 1
-            else:
-                print("错误: --batch 参数后需要指定JSON文件路径")
-                return
-        elif arg in ['--keep-segments', '-k']:
-            keep_segments = True
-        elif arg in ['--abort-on-error', '-a']:
-            abort_on_error = True
-        elif arg == '--test-mode':
-            test_mode = True
-            print("注意：已启用测试模式，将模拟部分片段下载失败")
-        elif arg == '--max-concurrent':
-            if i + 1 < len(args):
-                try:
-                    max_concurrent_videos = int(args[i + 1])
-                    if max_concurrent_videos < 1:
-                        max_concurrent_videos = 1
-                    i += 1
-                except ValueError:
-                    print("错误: --max-concurrent 参数值必须是正整数")
-                    return
-            else:
-                print("错误: --max-concurrent 参数后需要指定数值")
-                return
-        elif arg == '--max-workers':
-            if i + 1 < len(args):
-                try:
-                    max_workers_per_video = int(args[i + 1])
-                    if max_workers_per_video < 1:
-                        max_workers_per_video = 1
-                    i += 1
-                except ValueError:
-                    print("错误: --max-workers 参数值必须是正整数")
-                    return
-            else:
-                print("错误: --max-workers 参数后需要指定数值")
-                return
-        elif not arg.startswith('-') and not m3u8_url and not json_file:
-            # 这可能是M3U8 URL
-            m3u8_url = arg
-        
-        i += 1
-    
-    # 批量下载模式
-    if json_file or '--batch' in sys.argv:
-        if not json_file:
-            json_file = input("请输入Chrome扩展导出的JSON文件路径: ").strip()
-        
-        if not json_file:
-            print("错误：JSON文件路径不能为空")
-            return
-        
-        print(f"\n=== 批量下载模式 ===")
-        print(f"JSON文件: {json_file}")
-        print(f"最大并发视频数: {max_concurrent_videos}")
-        print(f"每个视频最大线程数: {max_workers_per_video}")
-        
-        if keep_segments:
-            print("注意：将保留原始视频切片文件")
-        if abort_on_error:
-            print("注意：当有片段下载失败时将终止程序")
-        
-        # 创建批量下载器
-        batch_downloader = BatchM3U8Downloader(
-            json_file_path=json_file,
-            max_concurrent_videos=max_concurrent_videos,
-            max_workers_per_video=max_workers_per_video
-        )
-        
-        try:
-            # 加载JSON文件
-            if not batch_downloader.load_json_file():
-                return
-            
-            # 开始批量下载
-            batch_downloader.start_batch_download()
-            
-        except KeyboardInterrupt:
-            print("\n程序被用户中断")
-        except Exception as e:
-            print(f"批量下载出错: {e}")
-        
-        return
-    
-    # 单个视频下载模式（保留原有逻辑）
-    print(f"\n=== 单个视频下载模式 ===")
-    
-    # 如果命令行没有提供网址，则询问用户输入
+    # 获取M3U8 URL
+    m3u8_url = args.url
     if not m3u8_url:
         m3u8_url = input("请输入m3u8文件的网址: ").strip()
     
@@ -987,18 +833,35 @@ def main():
         return
     
     # 显示当前的设置
-    if keep_segments:
+    if args.keep_segments:
         print("注意：将保留原始视频切片文件")
     else:
         print("注意：将自动清理临时视频切片文件")
     
-    if abort_on_error:
+    if args.abort_on_error:
         print("注意：当有片段下载失败时将终止程序，不进行合并")
     else:
         print("注意：当有片段下载失败时将自动排除失败片段，继续合并")
     
+    if args.test_mode:
+        print("注意：已启用测试模式，将模拟部分片段下载失败")
+    
+    # 创建自定义请求头
+    custom_headers = {}
+    if args.user_agent:
+        custom_headers['User-Agent'] = args.user_agent
+    if args.referer:
+        custom_headers['Referer'] = args.referer
+    
     # 创建下载器实例
-    downloader = M3U8Downloader(m3u8_url, max_workers=max_workers_per_video, test_mode=test_mode)
+    downloader = M3U8Downloader(
+        m3u8_url, 
+        max_workers=args.max_workers, 
+        max_retries=args.max_retries,
+        retry_delay=args.retry_delay,
+        test_mode=args.test_mode,
+        custom_headers=custom_headers
+    )
     
     try:
         # 下载m3u8文件并解析
@@ -1010,7 +873,7 @@ def main():
         
         # 如果有片段下载失败
         if not all_segments_successful:
-            if abort_on_error:
+            if args.abort_on_error:
                 print("错误：有片段下载失败，已按照--abort-on-error参数设置终止程序")
                 return
             else:
@@ -1024,18 +887,88 @@ def main():
                 downloader._save_download_state()
         
         # 合并ts片段为视频文件
-        if downloader.merge_segments():
-            # 根据命令行参数决定是否清理临时文件
-            if keep_segments:
+        if downloader.merge_segments(output_dir=args.output_dir):
+            # 只有在合并成功后才根据参数决定是否清理临时文件
+            if args.keep_segments:
                 print("已保留原始视频切片文件")
             else:
                 downloader.cleanup()
             
-            print(f"\n视频下载完成，保存在: {downloader.temp_dir}")
+            print(f"\n视频下载完成，保存在: {args.output_dir}")
+        else:
+            print("视频合并失败，保留切片文件供下次使用")
+    except KeyboardInterrupt:
+        print("\n程序被用户中断，保留切片文件供下次使用")
+    except Exception as e:
+        print(f"程序运行出错: {e}")
+        print("保留切片文件供下次使用")
+
+def batch_download(args):
+    """批量下载"""
+    print("=== 批量下载模式 ===")
+    
+    json_file = args.batch
+    if not json_file:
+        json_file = input("请输入Chrome扩展导出的JSON文件路径: ").strip()
+    
+    if not json_file:
+        print("错误：JSON文件路径不能为空")
+        return
+    
+    print(f"JSON文件: {json_file}")
+    print(f"最大并发视频数: {args.max_concurrent}")
+    print(f"每个视频最大线程数: {args.max_workers}")
+    print(f"最大重试次数: {args.max_retries}")
+    print(f"重试间隔: {args.retry_delay}秒")
+    
+    if args.keep_segments:
+        print("注意：将保留原始视频切片文件")
+    if args.abort_on_error:
+        print("注意：当有片段下载失败时将终止程序")
+    
+    # 创建自定义请求头
+    custom_headers = {}
+    if args.user_agent:
+        custom_headers['User-Agent'] = args.user_agent
+    if args.referer:
+        custom_headers['Referer'] = args.referer
+    
+    # 创建批量下载器
+    batch_downloader = BatchM3U8Downloader(
+        json_file_path=json_file,
+        max_concurrent_videos=args.max_concurrent,
+        max_workers_per_video=args.max_workers,
+        output_base_dir=args.output_dir,
+        custom_headers=custom_headers
+    )
+    
+    try:
+        # 加载JSON文件
+        if not batch_downloader.load_json_file():
+            return
+        
+        # 开始批量下载
+        batch_downloader.start_batch_download()
+        
     except KeyboardInterrupt:
         print("\n程序被用户中断")
     except Exception as e:
-        print(f"程序运行出错: {e}")
+        print(f"批量下载出错: {e}")
+
+def main():
+    print("欢迎使用M3U8视频下载器")
+    print("支持单个视频下载和Chrome扩展JSON文件批量下载")
+    print("注意：本程序需要ffmpeg支持，请确保已安装并添加到环境变量")
+    
+    # 解析命令行参数
+    args = parse_args()
+    
+    # 批量下载模式
+    if args.batch:
+        batch_download(args)
+    else:
+        # 单个视频下载模式（保留原有逻辑）
+        single_download(args)
 
 if __name__ == "__main__":
     main()

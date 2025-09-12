@@ -10,9 +10,10 @@ from utils import generate_output_filename
 class VideoMerger:
     """视频合并器类"""
     
-    def __init__(self, temp_dir, segments):
+    def __init__(self, temp_dir, segments, output_dir=None):
         self.temp_dir = temp_dir
         self.segments = segments
+        self.output_dir = output_dir or temp_dir  # 如果没有指定输出目录，则使用临时目录
     
     def merge_segments(self, output_filename=None):
         """合并视频片段"""
@@ -21,7 +22,11 @@ class VideoMerger:
             # 使用第一个片段的URL生成文件名（这里需要获取原始URL，简化处理）
             output_filename = generate_output_filename("default_url")
         
-        output_path = os.path.join(self.temp_dir, output_filename)
+        # 确定输出路径
+        output_path = os.path.join(self.output_dir, output_filename)
+        
+        # 确保输出目录存在
+        os.makedirs(self.output_dir, exist_ok=True)
         
         # 查找ffmpeg路径
         ffmpeg_path = self._find_ffmpeg()
