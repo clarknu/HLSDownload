@@ -16,12 +16,13 @@ from utils import save_download_report
 class BatchDownloader:
     """批量下载器类"""
     
-    def __init__(self, json_file_path, max_concurrent_videos=None, max_workers_per_video=None, output_base_dir=None):
+    def __init__(self, json_file_path, max_concurrent_videos=None, max_workers_per_video=None, output_base_dir=None, keep_segments=False):
         # 配置参数
         self.json_file_path = json_file_path
         self.max_concurrent_videos = max_concurrent_videos or DEFAULT_DOWNLOAD_CONFIG['max_concurrent_videos']
         self.max_workers_per_video = max_workers_per_video or DEFAULT_DOWNLOAD_CONFIG['max_workers_per_video']
         self.output_base_dir = output_base_dir or DEFAULT_OUTPUT_DIR
+        self.keep_segments = keep_segments  # 添加keep_segments参数
         
         # 确保输出目录存在
         if not os.path.exists(self.output_base_dir):
@@ -43,6 +44,8 @@ class BatchDownloader:
         print(f"输出目录: {self.output_base_dir}")
         print(f"最大并发视频数: {self.max_concurrent_videos}")
         print(f"每个视频的最大线程数: {self.max_workers_per_video}")
+        if self.keep_segments:
+            print("注意：将保留原始视频切片文件")
     
     def load_json_file(self):
         """加载JSON文件"""
@@ -105,6 +108,8 @@ class BatchDownloader:
             m3u8_url = str(video_info)
             custom_headers = {}
         
+        # 注意：在批量下载模式下，我们不直接在SegmentDownloader中处理keep_segments
+        # 而是在合并成功后根据BatchDownloader的keep_segments参数决定是否清理
         return SegmentDownloader(
             m3u8_url=m3u8_url,
             max_workers=self.max_workers_per_video,
@@ -152,6 +157,12 @@ class BatchDownloader:
                 if merger.merge_segments():
                     result.status = 'completed'
                     result.output_dir = self.output_base_dir
+                    
+                    # 只有在合并成功后才根据参数决定是否清理临时文件
+                    if self.keep_segments:
+                        print(f"[{index+1}/{self.total_videos}] 已保留原始视频切片文件")
+                    else:
+                        downloader.cleanup()
                     
                     with self.lock:
                         self.completed_videos += 1

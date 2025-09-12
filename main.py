@@ -154,7 +154,8 @@ def batch_download(args):
         json_file_path=json_file,
         max_concurrent_videos=args.max_concurrent,
         max_workers_per_video=args.max_workers,
-        output_base_dir=args.output_dir
+        output_base_dir=args.output_dir,
+        keep_segments=args.keep_segments  # 传递keep_segments参数
     )
     
     try:
