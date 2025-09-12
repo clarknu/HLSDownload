@@ -352,6 +352,13 @@ class SegmentDownloader:
             if os.path.exists(self.state_file):
                 os.remove(self.state_file)
             
-            print("临时文件清理完成")
+            # 尝试删除临时文件夹（只有当文件夹为空时才会成功）
+            try:
+                os.rmdir(self.temp_dir)
+                print(f"临时文件夹 {self.temp_dir} 清理完成")
+            except OSError:
+                # 文件夹不为空或其他原因无法删除，这很正常
+                print(f"临时文件清理完成，文件夹 {self.temp_dir} 仍存在（可能包含其他文件）")
+            
         except Exception as e:
             print(f"清理临时文件失败: {e}")
