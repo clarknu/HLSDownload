@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+M3U8视频下载器 (向后兼容版本)
+"""
+
 import os
 import re
 import sys
